@@ -187,20 +187,6 @@
             border: 1px solid rgba(255, 0, 110, 0.3);
         }
 
-        .demo-info {
-            margin-top: 20px;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 8px;
-            font-size: 13px;
-            color: rgba(255, 255, 255, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .demo-info strong {
-            color: #00d4ff;
-        }
-
         @media (max-width: 768px) {
             .login-container {
                 padding: 40px 30px;
@@ -246,12 +232,6 @@
             </div>
 
             <button type="submit" class="btn-skewed">Enter The Board</button>
-
-            <div class="demo-info">
-                <strong>Demo Account:</strong><br>
-                Username: demo<br>
-                Password: demo123
-            </div>
         </form>
 
         <form id="registerForm" method="POST" action="{{ url_for('register') }}" style="display: none;">
