@@ -45,22 +45,29 @@
             background: #050505;
         }
 
-        /* Left Sidebar */
+        /* Left Sidebar - Collapsible on Desktop */
         .sidebar {
-            width: 280px;
+            width: 60px;
             background: rgba(15, 15, 15, 0.6);
             backdrop-filter: blur(20px);
             border-right: 1px solid var(--glass-border);
-            padding: 30px 20px;
+            padding: 30px 10px;
             display: flex;
             flex-direction: column;
             position: fixed;
             height: 100vh;
             z-index: 1000;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .sidebar:hover {
+            width: 280px;
+            padding: 30px 20px;
         }
 
         .sidebar-brand {
-            font-size: 20px;
+            font-size: 24px;
             font-weight: 700;
             background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
             -webkit-background-clip: text;
@@ -68,6 +75,14 @@
             margin-bottom: 40px;
             text-decoration: none;
             display: block;
+            text-align: center;
+            white-space: nowrap;
+            transition: all 0.3s;
+        }
+
+        .sidebar:hover .sidebar-brand {
+            font-size: 20px;
+            text-align: left;
         }
 
         .sidebar-nav {
@@ -81,13 +96,14 @@
             display: flex;
             align-items: center;
             gap: 15px;
-            padding: 14px 18px;
+            padding: 14px 12px;
             color: var(--text-secondary);
             text-decoration: none;
             border-radius: 12px;
             transition: all 0.3s;
             font-size: 15px;
             font-weight: 500;
+            white-space: nowrap;
         }
 
         .sidebar-item:hover {
@@ -106,6 +122,16 @@
             font-size: 20px;
             width: 24px;
             text-align: center;
+            flex-shrink: 0;
+        }
+
+        .sidebar-text {
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar:hover .sidebar-text {
+            opacity: 1;
         }
 
         .sidebar-divider {
@@ -127,7 +153,7 @@
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px 16px;
+            padding: 12px;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
@@ -149,10 +175,17 @@
             justify-content: center;
             font-weight: 700;
             font-size: 14px;
+            flex-shrink: 0;
         }
 
         .user-info {
             flex: 1;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar:hover .user-info {
+            opacity: 1;
         }
 
         .user-name {
@@ -203,17 +236,79 @@
 
         /* Main Content Area */
         .main-content {
-            margin-left: 280px;
+            margin-left: 60px;
             flex: 1;
             min-height: 100vh;
             position: relative;
             z-index: 1;
+            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .content-wrapper {
             max-width: 1400px;
             margin: 0 auto;
             padding: 40px;
+        }
+
+        /* Hamburger Menu Button (Mobile Only) */
+        .hamburger-btn {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            background: rgba(15, 15, 15, 0.8);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            cursor: pointer;
+            z-index: 10001;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.3s;
+        }
+
+        .hamburger-btn:hover {
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }
+
+        .hamburger-line {
+            width: 24px;
+            height: 2px;
+            background: var(--text-primary);
+            transition: all 0.3s;
+        }
+
+        .hamburger-btn.active .hamburger-line:nth-child(1) {
+            transform: rotate(45deg) translate(7px, 7px);
+        }
+
+        .hamburger-btn.active .hamburger-line:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger-btn.active .hamburger-line:nth-child(3) {
+            transform: rotate(-45deg) translate(7px, -7px);
+        }
+
+        /* Mobile Sidebar Overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9998;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
         }
 
         /* Support Chat Bubble */
@@ -341,35 +436,40 @@
 
         /* Mobile Responsive */
         @media (max-width: 768px) {
+            .hamburger-btn {
+                display: flex;
+            }
+
             .sidebar {
-                width: 80px;
-                padding: 20px 10px;
+                width: 280px;
+                padding: 30px 20px;
+                transform: translateX(-100%);
+                z-index: 9999;
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
             }
 
             .sidebar-brand {
-                font-size: 24px;
-                text-align: center;
-            }
-
-            .sidebar-item {
-                justify-content: center;
-                padding: 12px;
+                font-size: 20px;
+                text-align: left;
             }
 
             .sidebar-text {
-                display: none;
+                opacity: 1;
             }
 
             .user-info {
-                display: none;
+                opacity: 1;
             }
 
             .main-content {
-                margin-left: 80px;
+                margin-left: 0;
             }
 
             .content-wrapper {
-                padding: 20px;
+                padding: 80px 20px 20px 20px;
             }
 
             .chat-window {
@@ -384,8 +484,18 @@
     <!-- Neural Network Particles Background -->
     <div id="particles-js"></div>
 
+    <!-- Hamburger Menu Button (Mobile Only) -->
+    <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileSidebar()">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+    </button>
+
+    <!-- Sidebar Overlay (Mobile Only) -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+
     <!-- Left Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
         <a href="{{ url_for('dashboard') }}" class="sidebar-brand">🎓 Academic Board</a>
         
         <nav class="sidebar-nav">
@@ -556,6 +666,16 @@
 
         function toggleChat() {
             document.getElementById('chatWindow').classList.toggle('active');
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const hamburger = document.getElementById('hamburgerBtn');
+            
+            sidebar.classList.toggle('mobile-open');
+            overlay.classList.toggle('active');
+            hamburger.classList.toggle('active');
         }
 
         function handleChatKeypress(event) {

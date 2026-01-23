@@ -54,16 +54,15 @@
 
     .tool-card {
         background: rgba(15, 15, 15, 0.6);
-        backdrop-filter: blur(20px);
+        backdrop-filter: blur(30px);
         border-radius: 24px;
         padding: 40px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
         text-decoration: none;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
         position: relative;
         overflow: hidden;
         transform-style: preserve-3d;
@@ -127,6 +126,12 @@
             inset 0 0 40px rgba(0, 255, 136, 0.05);
     }
 
+    .tool-content {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
     .tool-icon {
         font-size: 72px;
         margin-bottom: 20px;
@@ -158,6 +163,7 @@
         line-height: 1.6;
         font-size: 15px;
         font-weight: 400;
+        flex-grow: 1;
     }
 
     .tool-card.architect .tool-desc {
@@ -172,6 +178,7 @@
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-top: auto;
+        padding-top: 20px;
     }
 
     .tool-card.architect .tool-price {
@@ -239,16 +246,9 @@
 
     @media (max-width: 768px) {
         .bento-grid {
-            grid-template-columns: 1fr;
+            display: flex;
+            flex-direction: column;
             gap: 15px;
-        }
-
-        .tool-card.architect,
-        .tool-card.detective,
-        .tool-card.oracle,
-        .tool-card.grader {
-            grid-column: span 1;
-            grid-row: span 1;
         }
 
         .page-title {
@@ -265,7 +265,7 @@
         }
 
         .tool-card.architect .tool-icon {
-            font-size: 72px;
+            font-size: 76px;
         }
 
         .tool-title {
@@ -273,6 +273,22 @@
         }
 
         .tool-card.architect .tool-title {
+            font-size: 32px;
+        }
+
+        .tool-desc {
+            font-size: 14px;
+        }
+
+        .tool-card.architect .tool-desc {
+            font-size: 15px;
+        }
+
+        .tool-price {
+            font-size: 28px;
+        }
+
+        .tool-card.architect .tool-price {
             font-size: 32px;
         }
     }
@@ -285,7 +301,7 @@
 <div class="bento-grid">
     <a href="{{ url_for('tool_writer') }}" class="tool-card architect" data-tilt data-tilt-max="5" data-tilt-speed="400" data-tilt-perspective="1000">
         <div class="tool-badge">Flagship</div>
-        <div>
+        <div class="tool-content">
             <span class="tool-icon">✍️</span>
             <h3 class="tool-title">The Architect</h3>
             <p class="tool-desc">AI Essay Writer with dynamic pricing and citation verification. Human-like style, no AI buzzwords, real academic sources. Powered by 3-agent refinement system.</p>
@@ -294,7 +310,7 @@
     </a>
 
     <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-        <div>
+        <div class="tool-content">
             <span class="tool-icon">🔍</span>
             <h3 class="tool-title">The Detective</h3>
             <p class="tool-desc">3-Agent plagiarism team hunts sources, analyzes similarity, generates PDF report with verified links.</p>
@@ -303,7 +319,7 @@
     </a>
 
     <a href="{{ url_for('tool_detector') }}" class="tool-card oracle" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-        <div>
+        <div class="tool-content">
             <span class="tool-icon">🔮</span>
             <h3 class="tool-title">The Oracle</h3>
             <p class="tool-desc">AI content detector identifies AI-generated text with detailed pattern analysis and probability scoring.</p>
@@ -312,7 +328,7 @@
     </a>
 
     <a href="{{ url_for('tool_grader') }}" class="tool-card grader" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-        <div>
+        <div class="tool-content">
             <span class="tool-icon">📊</span>
             <h3 class="tool-title">The Grader</h3>
             <p class="tool-desc">Strict assignment marking by 3 professors with actionable feedback and comprehensive evaluation.</p>
