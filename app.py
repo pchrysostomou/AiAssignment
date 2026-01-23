@@ -773,6 +773,12 @@ def register():
         username = request.form.get('username')
         email = request.form.get('email')
         password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        
+        # Check if passwords match
+        if password != confirm_password:
+            flash('Passwords do not match!', 'error')
+            return redirect(url_for('register'))
         
         if User.query.filter_by(username=username).first():
             flash('Username exists', 'error')
@@ -783,7 +789,7 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        flash('Registration successful!', 'success')
+        flash(f'Account created! A welcome email has been sent to {email}.', 'success')
         return redirect(url_for('login'))
     
     return render_template('login.html')
