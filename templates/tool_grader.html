@@ -59,7 +59,7 @@
         cursor: pointer;
         transition: all 0.3s;
         background: rgba(0, 255, 136, 0.02);
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     .upload-zone:hover {
@@ -82,18 +82,60 @@
         color: var(--text-secondary);
     }
 
-    .uploaded-file {
-        background: var(--bg-deep);
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-        display: none;
-        align-items: center;
+    /* GLASS CHIP FILE LIST */
+    .file-list {
+        display: flex;
+        flex-wrap: wrap;
         gap: 10px;
+        margin-top: 15px;
+        min-height: 40px;
     }
 
-    .uploaded-file.active {
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: rgba(0, 255, 136, 0.1);
+        border: 1px solid rgba(0, 255, 136, 0.3);
+        border-radius: 20px;
+        font-size: 14px;
+        color: var(--text-primary);
+        animation: chipFadeIn 0.3s;
+    }
+
+    @keyframes chipFadeIn {
+        from { opacity: 0; transform: scale(0.8); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    .file-chip-name {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-chip-remove {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: rgba(255, 0, 110, 0.2);
+        border: 1px solid var(--neon-pink);
+        color: var(--neon-pink);
         display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+
+    .file-chip-remove:hover {
+        background: var(--neon-pink);
+        color: white;
+        transform: rotate(90deg);
     }
 
     .btn-neon {
@@ -258,29 +300,23 @@
         </div>
 
         <form id="graderForm">
-            <div class="section-title">1. Upload Assignment Brief</div>
+            <div class="section-title">1. Upload Assignment Brief(s)</div>
             <div class="upload-zone" id="briefZone">
                 <div class="upload-icon">📋</div>
-                <div class="upload-text">Upload Assignment Brief</div>
-                <div class="upload-subtext">PDF or DOCX</div>
-                <input type="file" id="briefInput" accept=".pdf,.docx" style="display: none;">
+                <div class="upload-text">Upload Assignment Brief(s)</div>
+                <div class="upload-subtext">PDF or DOCX (Multiple files supported)</div>
+                <input type="file" id="briefInput" accept=".pdf,.docx" multiple style="display: none;">
             </div>
-            <div class="uploaded-file" id="briefFile">
-                <span>📄</span>
-                <span id="briefFileName"></span>
-            </div>
+            <div class="file-list" id="briefFileList"></div>
 
-            <div class="section-title" style="margin-top: 30px;">2. Upload Student Essay</div>
+            <div class="section-title" style="margin-top: 30px;">2. Upload Student Essay(s)</div>
             <div class="upload-zone" id="essayZone">
                 <div class="upload-icon">📝</div>
-                <div class="upload-text">Upload Student Essay</div>
-                <div class="upload-subtext">PDF or DOCX</div>
-                <input type="file" id="essayInput" accept=".pdf,.docx" style="display: none;">
+                <div class="upload-text">Upload Student Essay(s)</div>
+                <div class="upload-subtext">PDF or DOCX (Multiple files supported)</div>
+                <input type="file" id="essayInput" accept=".pdf,.docx" multiple style="display: none;">
             </div>
-            <div class="uploaded-file" id="essayFile">
-                <span>📄</span>
-                <span id="essayFileName"></span>
-            </div>
+            <div class="file-list" id="essayFileList"></div>
 
             <button type="submit" class="btn-neon" id="gradeBtn">Grade Assignment (£10)</button>
         </form>
@@ -296,8 +332,8 @@
 <script>
     const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
     
-    let briefText = '';
-    let essayText = '';
+    let briefFiles = [];
+    let essayFiles = [];
 
     // Brief upload
     document.getElementById('briefZone').addEventListener('click', () => {
@@ -305,8 +341,8 @@
     });
 
     document.getElementById('briefInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
+        const files = Array.from(e.target.files);
+        for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
 
@@ -318,9 +354,8 @@
 
                 const data = await response.json();
                 if (data.success) {
-                    briefText = data.text;
-                    document.getElementById('briefFileName').textContent = file.name;
-                    document.getElementById('briefFile').classList.add('active');
+                    briefFiles.push({name: file.name, text: data.text});
+                    addFileChip(file.name, 'briefFileList');
                 } else {
                     alert('Error: ' + data.error);
                 }
@@ -336,8 +371,8 @@
     });
 
     document.getElementById('essayInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
+        const files = Array.from(e.target.files);
+        for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
 
@@ -349,9 +384,8 @@
 
                 const data = await response.json();
                 if (data.success) {
-                    essayText = data.text;
-                    document.getElementById('essayFileName').textContent = file.name;
-                    document.getElementById('essayFile').classList.add('active');
+                    essayFiles.push({name: file.name, text: data.text});
+                    addFileChip(file.name, 'essayFileList');
                 } else {
                     alert('Error: ' + data.error);
                 }
@@ -361,11 +395,32 @@
         }
     });
 
+    function addFileChip(filename, listId) {
+        const fileList = document.getElementById(listId);
+        const chip = document.createElement('div');
+        chip.className = 'file-chip';
+        chip.innerHTML = `
+            <span>📄</span>
+            <span class="file-chip-name">${filename}</span>
+            <div class="file-chip-remove" onclick="removeFileChip(this, '${filename}', '${listId}')">×</div>
+        `;
+        fileList.appendChild(chip);
+    }
+
+    function removeFileChip(btn, filename, listId) {
+        btn.parentElement.remove();
+        if (listId === 'briefFileList') {
+            briefFiles = briefFiles.filter(f => f.name !== filename);
+        } else if (listId === 'essayFileList') {
+            essayFiles = essayFiles.filter(f => f.name !== filename);
+        }
+    }
+
     document.getElementById('graderForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        if (!briefText || !essayText) {
-            alert('Please upload both the assignment brief and student essay');
+        if (briefFiles.length === 0 || essayFiles.length === 0) {
+            alert('Please upload both assignment brief(s) and student essay(s)');
             return;
         }
 
@@ -374,6 +429,9 @@
         gradeBtn.textContent = 'Processing Payment...';
 
         try {
+            const briefText = briefFiles.map(f => `FILE: ${f.name}\n${f.text}`).join('\n\n');
+            const essayText = essayFiles.map(f => `FILE: ${f.name}\n${f.text}`).join('\n\n');
+
             sessionStorage.setItem('grading_data', JSON.stringify({
                 brief: briefText,
                 essay: essayText

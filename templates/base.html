@@ -30,8 +30,8 @@
             background: #050505;
             color: var(--text-primary);
             min-height: 100vh;
-            display: flex;
             position: relative;
+            overflow-x: hidden;
         }
 
         /* Neural Network Particles Background */
@@ -45,174 +45,115 @@
             background: #050505;
         }
 
-        /* Left Sidebar - Collapsible on Desktop */
-        .sidebar {
-            width: 60px;
-            background: rgba(15, 15, 15, 0.6);
-            backdrop-filter: blur(20px);
-            border-right: 1px solid var(--glass-border);
-            padding: 30px 10px;
-            display: flex;
-            flex-direction: column;
+        /* FLOATING GLASS DOCK - Premium Sci-Fi Navigation */
+        .floating-dock {
             position: fixed;
-            height: 100vh;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
             z-index: 1000;
-            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            overflow: hidden;
-        }
-
-        .sidebar:hover {
-            width: 280px;
-            padding: 30px 20px;
-        }
-
-        .sidebar-brand {
-            font-size: 24px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 40px;
-            text-decoration: none;
-            display: block;
-            text-align: center;
-            white-space: nowrap;
-            transition: all 0.3s;
-        }
-
-        .sidebar:hover .sidebar-brand {
-            font-size: 20px;
-            text-align: left;
-        }
-
-        .sidebar-nav {
-            flex: 1;
+            background: rgba(15, 15, 15, 0.7);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            padding: 15px 10px;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
         }
 
-        .sidebar-item {
+        .dock-item {
+            position: relative;
+            width: 50px;
+            height: 50px;
             display: flex;
             align-items: center;
-            gap: 15px;
-            padding: 14px 12px;
-            color: var(--text-secondary);
-            text-decoration: none;
+            justify-content: center;
             border-radius: 12px;
-            transition: all 0.3s;
-            font-size: 15px;
-            font-weight: 500;
-            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 24px;
         }
 
-        .sidebar-item:hover {
-            background: var(--glass-bg);
-            color: var(--text-primary);
-            border-left: 3px solid var(--neon-blue);
+        .dock-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: scale(1.1);
         }
 
-        .sidebar-item.active {
-            background: rgba(0, 212, 255, 0.1);
+        .dock-item.active {
+            background: rgba(0, 212, 255, 0.2);
             color: var(--neon-blue);
-            border-left: 3px solid var(--neon-blue);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
         }
 
-        .sidebar-icon {
-            font-size: 20px;
-            width: 24px;
-            text-align: center;
-            flex-shrink: 0;
-        }
-
-        .sidebar-text {
+        /* Tooltip */
+        .dock-tooltip {
+            position: absolute;
+            left: 70px;
+            background: rgba(15, 15, 15, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 8px 16px;
+            border-radius: 8px;
+            white-space: nowrap;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
             opacity: 0;
+            pointer-events: none;
             transition: opacity 0.3s;
+            z-index: 10001;
         }
 
-        .sidebar:hover .sidebar-text {
+        .dock-item:hover .dock-tooltip {
             opacity: 1;
         }
 
-        .sidebar-divider {
-            height: 1px;
-            background: var(--glass-border);
-            margin: 20px 0;
-        }
-
-        .sidebar-footer {
+        /* User Profile Dock Item */
+        .dock-user {
             margin-top: auto;
+            padding-top: 15px;
+            border-top: 1px solid var(--glass-border);
         }
 
-        .user-profile {
-            position: relative;
-            cursor: pointer;
-        }
-
-        .user-avatar {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px;
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            transition: all 0.3s;
-        }
-
-        .user-avatar:hover {
-            border-color: var(--neon-blue);
-            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-        }
-
-        .avatar-circle {
-            width: 36px;
-            height: 36px;
+        .dock-avatar {
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
             background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 14px;
-            flex-shrink: 0;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.3s;
         }
 
-        .user-info {
-            flex: 1;
-            opacity: 0;
-            transition: opacity 0.3s;
+        .dock-avatar:hover {
+            transform: scale(1.1);
         }
 
-        .sidebar:hover .user-info {
-            opacity: 1;
-        }
-
-        .user-name {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .user-role {
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .dropdown-menu {
+        /* User Dropdown */
+        .user-dropdown {
             position: absolute;
-            bottom: 70px;
-            left: 0;
-            right: 0;
-            background: var(--bg-deep);
+            left: 70px;
+            bottom: 0;
+            background: rgba(15, 15, 15, 0.95);
+            backdrop-filter: blur(30px);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
+            min-width: 200px;
             display: none;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
             overflow: hidden;
         }
 
-        .dropdown-menu.active {
+        .user-dropdown.active {
             display: block;
         }
 
@@ -223,6 +164,7 @@
             display: block;
             transition: all 0.3s;
             border-bottom: 1px solid var(--glass-border);
+            font-size: 14px;
         }
 
         .dropdown-item:last-child {
@@ -236,12 +178,10 @@
 
         /* Main Content Area */
         .main-content {
-            margin-left: 60px;
-            flex: 1;
+            margin-left: 100px;
             min-height: 100vh;
             position: relative;
             z-index: 1;
-            transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .content-wrapper {
@@ -250,12 +190,13 @@
             padding: 40px;
         }
 
-        /* Hamburger Menu Button (Mobile Only) */
+        /* Hamburger Menu (Mobile) */
         .hamburger-btn {
             display: none;
             position: fixed;
             top: 20px;
             left: 20px;
+            z-index: 10001;
             width: 50px;
             height: 50px;
             background: rgba(15, 15, 15, 0.8);
@@ -263,51 +204,44 @@
             border: 1px solid var(--glass-border);
             border-radius: 12px;
             cursor: pointer;
-            z-index: 10001;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             gap: 6px;
-            transition: all 0.3s;
         }
 
-        .hamburger-btn:hover {
-            border-color: var(--neon-blue);
-            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
-        }
-
-        .hamburger-line {
+        .hamburger-btn span {
             width: 24px;
             height: 2px;
-            background: var(--text-primary);
+            background: var(--neon-blue);
             transition: all 0.3s;
         }
 
-        .hamburger-btn.active .hamburger-line:nth-child(1) {
-            transform: rotate(45deg) translate(7px, 7px);
+        .hamburger-btn.active span:nth-child(1) {
+            transform: rotate(45deg) translate(6px, 6px);
         }
 
-        .hamburger-btn.active .hamburger-line:nth-child(2) {
+        .hamburger-btn.active span:nth-child(2) {
             opacity: 0;
         }
 
-        .hamburger-btn.active .hamburger-line:nth-child(3) {
-            transform: rotate(-45deg) translate(7px, -7px);
+        .hamburger-btn.active span:nth-child(3) {
+            transform: rotate(-45deg) translate(6px, -6px);
         }
 
-        /* Mobile Sidebar Overlay */
-        .sidebar-overlay {
+        /* Mobile Overlay */
+        .mobile-overlay {
             display: none;
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 9998;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 999;
         }
 
-        .sidebar-overlay.active {
+        .mobile-overlay.active {
             display: block;
         }
 
@@ -440,28 +374,13 @@
                 display: flex;
             }
 
-            .sidebar {
-                width: 280px;
-                padding: 30px 20px;
-                transform: translateX(-100%);
-                z-index: 9999;
+            .floating-dock {
+                left: -100%;
+                transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             }
 
-            .sidebar.mobile-open {
-                transform: translateX(0);
-            }
-
-            .sidebar-brand {
-                font-size: 20px;
-                text-align: left;
-            }
-
-            .sidebar-text {
-                opacity: 1;
-            }
-
-            .user-info {
-                opacity: 1;
+            .floating-dock.mobile-active {
+                left: 20px;
             }
 
             .main-content {
@@ -484,63 +403,52 @@
     <!-- Neural Network Particles Background -->
     <div id="particles-js"></div>
 
-    <!-- Hamburger Menu Button (Mobile Only) -->
-    <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileSidebar()">
-        <span class="hamburger-line"></span>
-        <span class="hamburger-line"></span>
-        <span class="hamburger-line"></span>
+    <!-- Hamburger Menu (Mobile) -->
+    <button class="hamburger-btn" id="hamburgerBtn" onclick="toggleMobileDock()">
+        <span></span>
+        <span></span>
+        <span></span>
     </button>
 
-    <!-- Sidebar Overlay (Mobile Only) -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleMobileSidebar()"></div>
+    <!-- Mobile Overlay -->
+    <div class="mobile-overlay" id="mobileOverlay" onclick="toggleMobileDock()"></div>
 
-    <!-- Left Sidebar -->
-    <div class="sidebar" id="sidebar">
-        <a href="{{ url_for('dashboard') }}" class="sidebar-brand">🎓 Academic Board</a>
-        
-        <nav class="sidebar-nav">
-            <a href="{{ url_for('dashboard') }}" class="sidebar-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                <span class="sidebar-icon">🏠</span>
-                <span class="sidebar-text">Dashboard</span>
-            </a>
-            <a href="{{ url_for('tool_writer') }}" class="sidebar-item {% if request.endpoint == 'tool_writer' %}active{% endif %}">
-                <span class="sidebar-icon">✍️</span>
-                <span class="sidebar-text">The Architect</span>
-            </a>
-            <a href="{{ url_for('tool_plagiarism') }}" class="sidebar-item {% if request.endpoint == 'tool_plagiarism' %}active{% endif %}">
-                <span class="sidebar-icon">🔍</span>
-                <span class="sidebar-text">The Detective</span>
-            </a>
-            <a href="{{ url_for('tool_detector') }}" class="sidebar-item {% if request.endpoint == 'tool_detector' %}active{% endif %}">
-                <span class="sidebar-icon">🔮</span>
-                <span class="sidebar-text">The Oracle</span>
-            </a>
-            <a href="{{ url_for('tool_grader') }}" class="sidebar-item {% if request.endpoint == 'tool_grader' %}active{% endif %}">
-                <span class="sidebar-icon">📊</span>
-                <span class="sidebar-text">The Grader</span>
-            </a>
-        </nav>
+    <!-- FLOATING GLASS DOCK -->
+    <nav class="floating-dock" id="floatingDock">
+        <a href="{{ url_for('dashboard') }}" class="dock-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <span>🏠</span>
+            <div class="dock-tooltip">Dashboard</div>
+        </a>
+        <a href="{{ url_for('tool_writer') }}" class="dock-item {% if request.endpoint == 'tool_writer' %}active{% endif %}">
+            <span>✍️</span>
+            <div class="dock-tooltip">The Architect</div>
+        </a>
+        <a href="{{ url_for('tool_plagiarism') }}" class="dock-item {% if request.endpoint == 'tool_plagiarism' %}active{% endif %}">
+            <span>🔍</span>
+            <div class="dock-tooltip">The Detective</div>
+        </a>
+        <a href="{{ url_for('tool_detector') }}" class="dock-item {% if request.endpoint == 'tool_detector' %}active{% endif %}">
+            <span>🔮</span>
+            <div class="dock-tooltip">The Oracle</div>
+        </a>
+        <a href="{{ url_for('tool_grader') }}" class="dock-item {% if request.endpoint == 'tool_grader' %}active{% endif %}">
+            <span>📊</span>
+            <div class="dock-tooltip">The Grader</div>
+        </a>
 
-        <div class="sidebar-divider"></div>
-
-        <div class="sidebar-footer">
-            <div class="user-profile" onclick="toggleDropdown()">
-                <div class="user-avatar">
-                    <div class="avatar-circle">{{ current_user.username[0].upper() }}</div>
-                    <div class="user-info">
-                        <div class="user-name">{{ current_user.username }}</div>
-                        <div class="user-role">Premium</div>
-                    </div>
-                </div>
-                <div class="dropdown-menu" id="userDropdown">
-                    <a href="{{ url_for('my_essays') }}" class="dropdown-item">📝 My Essays</a>
-                    <a href="{{ url_for('billing') }}" class="dropdown-item">💳 Billing History</a>
-                    <a href="{{ url_for('settings') }}" class="dropdown-item">⚙️ Settings</a>
-                    <a href="{{ url_for('logout') }}" class="dropdown-item">🚪 Logout</a>
-                </div>
+        <div class="dock-user">
+            <div class="dock-item" onclick="toggleUserDropdown()">
+                <div class="dock-avatar">{{ current_user.username[0].upper() }}</div>
+                <div class="dock-tooltip">{{ current_user.username }}</div>
+            </div>
+            <div class="user-dropdown" id="userDropdown">
+                <a href="{{ url_for('my_essays') }}" class="dropdown-item">📝 My Essays</a>
+                <a href="{{ url_for('billing') }}" class="dropdown-item">💳 Billing History</a>
+                <a href="{{ url_for('settings') }}" class="dropdown-item">⚙️ Settings</a>
+                <a href="{{ url_for('logout') }}" class="dropdown-item">🚪 Logout</a>
             </div>
         </div>
-    </div>
+    </nav>
 
     <!-- Main Content Area -->
     <div class="main-content">
@@ -570,97 +478,30 @@
     </div>
 
     <script>
-        // Initialize Particles.js - Neural Network Effect
+        // Initialize Particles.js
         particlesJS('particles-js', {
             particles: {
-                number: {
-                    value: 80,
-                    density: {
-                        enable: true,
-                        value_area: 800
-                    }
-                },
-                color: {
-                    value: ['#00d4ff', '#ffffff']
-                },
-                shape: {
-                    type: 'circle',
-                    stroke: {
-                        width: 0,
-                        color: '#000000'
-                    }
-                },
-                opacity: {
-                    value: 0.3,
-                    random: true,
-                    anim: {
-                        enable: true,
-                        speed: 0.5,
-                        opacity_min: 0.1,
-                        sync: false
-                    }
-                },
-                size: {
-                    value: 3,
-                    random: true,
-                    anim: {
-                        enable: true,
-                        speed: 2,
-                        size_min: 0.5,
-                        sync: false
-                    }
-                },
-                line_linked: {
-                    enable: true,
-                    distance: 150,
-                    color: '#00d4ff',
-                    opacity: 0.2,
-                    width: 1
-                },
-                move: {
-                    enable: true,
-                    speed: 1,
-                    direction: 'none',
-                    random: true,
-                    straight: false,
-                    out_mode: 'out',
-                    bounce: false,
-                    attract: {
-                        enable: true,
-                        rotateX: 600,
-                        rotateY: 1200
-                    }
-                }
+                number: { value: 80, density: { enable: true, value_area: 800 } },
+                color: { value: ['#00d4ff', '#ffffff'] },
+                shape: { type: 'circle' },
+                opacity: { value: 0.3, random: true, anim: { enable: true, speed: 0.5, opacity_min: 0.1 } },
+                size: { value: 3, random: true, anim: { enable: true, speed: 2, size_min: 0.5 } },
+                line_linked: { enable: true, distance: 150, color: '#00d4ff', opacity: 0.2, width: 1 },
+                move: { enable: true, speed: 1, direction: 'none', random: true, out_mode: 'out' }
             },
             interactivity: {
-                detect_on: 'canvas',
-                events: {
-                    onhover: {
-                        enable: true,
-                        mode: 'grab'
-                    },
-                    onclick: {
-                        enable: true,
-                        mode: 'push'
-                    },
-                    resize: true
-                },
-                modes: {
-                    grab: {
-                        distance: 140,
-                        line_linked: {
-                            opacity: 0.5
-                        }
-                    },
-                    push: {
-                        particles_nb: 4
-                    }
-                }
-            },
-            retina_detect: true
+                events: { onhover: { enable: true, mode: 'grab' }, onclick: { enable: true, mode: 'push' } },
+                modes: { grab: { distance: 140, line_linked: { opacity: 0.5 } }, push: { particles_nb: 4 } }
+            }
         });
 
-        function toggleDropdown() {
+        function toggleMobileDock() {
+            document.getElementById('floatingDock').classList.toggle('mobile-active');
+            document.getElementById('mobileOverlay').classList.toggle('active');
+            document.getElementById('hamburgerBtn').classList.toggle('active');
+        }
+
+        function toggleUserDropdown() {
             document.getElementById('userDropdown').classList.toggle('active');
         }
 
@@ -668,55 +509,34 @@
             document.getElementById('chatWindow').classList.toggle('active');
         }
 
-        function toggleMobileSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            const hamburger = document.getElementById('hamburgerBtn');
-            
-            sidebar.classList.toggle('mobile-open');
-            overlay.classList.toggle('active');
-            hamburger.classList.toggle('active');
-        }
-
         function handleChatKeypress(event) {
-            if (event.key === 'Enter') {
-                sendChatMessage();
-            }
+            if (event.key === 'Enter') sendChatMessage();
         }
 
         async function sendChatMessage() {
             const input = document.getElementById('chatInput');
             const message = input.value.trim();
-            
             if (!message) return;
-            
+
             const messagesDiv = document.getElementById('chatMessages');
-            
-            // Add user message
             const userMsg = document.createElement('div');
             userMsg.className = 'chat-message user';
             userMsg.textContent = message;
             messagesDiv.appendChild(userMsg);
-            
             input.value = '';
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            
-            // Send to backend
+
             try {
                 const response = await fetch('/api/support', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({message: message})
                 });
-                
                 const data = await response.json();
-                
-                // Add bot response
                 const botMsg = document.createElement('div');
                 botMsg.className = 'chat-message bot';
                 botMsg.textContent = data.reply;
                 messagesDiv.appendChild(botMsg);
-                
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             } catch (error) {
                 const errorMsg = document.createElement('div');
@@ -728,10 +548,9 @@
 
         // Close dropdown when clicking outside
         document.addEventListener('click', function(event) {
-            const profile = document.querySelector('.user-profile');
             const dropdown = document.getElementById('userDropdown');
-            
-            if (profile && !profile.contains(event.target)) {
+            const dockUser = document.querySelector('.dock-user');
+            if (dockUser && !dockUser.contains(event.target)) {
                 dropdown.classList.remove('active');
             }
         });

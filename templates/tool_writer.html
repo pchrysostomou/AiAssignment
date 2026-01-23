@@ -61,7 +61,7 @@
         cursor: pointer;
         transition: all 0.3s;
         background: rgba(0, 212, 255, 0.02);
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
 
     .upload-zone:hover {
@@ -84,18 +84,60 @@
         color: var(--text-secondary);
     }
 
-    .uploaded-file {
-        background: var(--bg-deep);
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-        display: none;
-        align-items: center;
+    /* GLASS CHIP FILE LIST */
+    .file-list {
+        display: flex;
+        flex-wrap: wrap;
         gap: 10px;
+        margin-top: 15px;
+        min-height: 40px;
     }
 
-    .uploaded-file.active {
+    .file-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid rgba(0, 212, 255, 0.3);
+        border-radius: 20px;
+        font-size: 14px;
+        color: var(--text-primary);
+        animation: chipFadeIn 0.3s;
+    }
+
+    @keyframes chipFadeIn {
+        from { opacity: 0; transform: scale(0.8); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    .file-chip-name {
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-chip-remove {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: rgba(255, 0, 110, 0.2);
+        border: 1px solid var(--neon-pink);
+        color: var(--neon-pink);
         display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+
+    .file-chip-remove:hover {
+        background: var(--neon-pink);
+        color: white;
+        transform: rotate(90deg);
     }
 
     select, textarea, input[type="range"] {
@@ -331,17 +373,14 @@
         </div>
 
         <form id="writerForm">
-            <div class="section-title">1. Upload Assignment Brief (Optional)</div>
-            <div class="upload-zone" id="briefZone">
+            <div class="section-title">1. Upload Context Files (Optional)</div>
+            <div class="upload-zone" id="contextZone">
                 <div class="upload-icon">📋</div>
-                <div class="upload-text">Upload Assignment Brief</div>
-                <div class="upload-subtext">PDF or DOCX (Optional)</div>
-                <input type="file" id="briefInput" accept=".pdf,.docx" style="display: none;">
+                <div class="upload-text">Upload Assignment Briefs or Context Files</div>
+                <div class="upload-subtext">PDF or DOCX (Multiple files supported)</div>
+                <input type="file" id="contextInput" accept=".pdf,.docx" multiple style="display: none;">
             </div>
-            <div class="uploaded-file" id="briefFile">
-                <span>📄</span>
-                <span id="briefFileName"></span>
-            </div>
+            <div class="file-list" id="contextFileList"></div>
 
             <div class="section-title" style="margin-top: 30px;">2. Additional Instructions</div>
             <div class="form-group">
@@ -379,16 +418,16 @@
 <script>
     const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
     let currentEssayId = null;
-    let briefText = '';
+    let contextFiles = [];
 
-    // Brief upload
-    document.getElementById('briefZone').addEventListener('click', () => {
-        document.getElementById('briefInput').click();
+    // Context files upload
+    document.getElementById('contextZone').addEventListener('click', () => {
+        document.getElementById('contextInput').click();
     });
 
-    document.getElementById('briefInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
+    document.getElementById('contextInput').addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        for (const file of files) {
             const formData = new FormData();
             formData.append('file', file);
 
@@ -400,9 +439,8 @@
 
                 const data = await response.json();
                 if (data.success) {
-                    briefText = data.text;
-                    document.getElementById('briefFileName').textContent = file.name;
-                    document.getElementById('briefFile').classList.add('active');
+                    contextFiles.push({name: file.name, text: data.text});
+                    addFileChip(file.name, 'contextFileList');
                 } else {
                     alert('Error: ' + data.error);
                 }
@@ -411,6 +449,25 @@
             }
         }
     });
+
+    function addFileChip(filename, listId) {
+        const fileList = document.getElementById(listId);
+        const chip = document.createElement('div');
+        chip.className = 'file-chip';
+        chip.innerHTML = `
+            <span>📄</span>
+            <span class="file-chip-name">${filename}</span>
+            <div class="file-chip-remove" onclick="removeFileChip(this, '${filename}', '${listId}')">×</div>
+        `;
+        fileList.appendChild(chip);
+    }
+
+    function removeFileChip(btn, filename, listId) {
+        btn.parentElement.remove();
+        if (listId === 'contextFileList') {
+            contextFiles = contextFiles.filter(f => f.name !== filename);
+        }
+    }
 
     // Word count slider
     const slider = document.getElementById('wordCountSlider');
@@ -436,10 +493,11 @@
             return;
         }
 
-        // Combine brief and instructions
+        // Combine context files and instructions
         let fullInstructions = instructions;
-        if (briefText) {
-            fullInstructions = `ASSIGNMENT BRIEF:\n${briefText}\n\nADDITIONAL INSTRUCTIONS:\n${instructions}`;
+        if (contextFiles.length > 0) {
+            const contextText = contextFiles.map(f => `FILE: ${f.name}\n${f.text}`).join('\n\n');
+            fullInstructions = `CONTEXT FILES:\n${contextText}\n\nINSTRUCTIONS:\n${instructions}`;
         }
 
         sessionStorage.setItem('pending_essay', JSON.stringify({

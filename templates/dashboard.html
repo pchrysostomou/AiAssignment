@@ -30,13 +30,11 @@
         margin: 0 auto;
     }
 
-    /* The Architect - Flagship Tool (Large Card) */
     .tool-card.architect {
         grid-column: span 2;
         grid-row: span 2;
     }
 
-    /* Other Tools */
     .tool-card.detective {
         grid-column: span 2;
         grid-row: span 1;
@@ -65,9 +63,9 @@
         flex-direction: column;
         position: relative;
         overflow: hidden;
-        transform-style: preserve-3d;
     }
 
+    /* AURORA SPOTLIGHT EFFECT */
     .tool-card::before {
         content: '';
         position: absolute;
@@ -75,10 +73,11 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0, 212, 255, 0.15), transparent 50%);
+        background: radial-gradient(800px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.06), transparent 40%);
         opacity: 0;
         transition: opacity 0.3s;
         pointer-events: none;
+        z-index: 1;
     }
 
     .tool-card:hover::before {
@@ -89,8 +88,7 @@
         border-color: rgba(0, 212, 255, 0.3);
         box-shadow: 
             0 20px 60px rgba(0, 0, 0, 0.5),
-            0 0 40px rgba(0, 212, 255, 0.2),
-            inset 0 0 40px rgba(0, 212, 255, 0.05);
+            0 0 40px rgba(0, 212, 255, 0.2);
         transform: translateY(-5px);
     }
 
@@ -98,38 +96,36 @@
         border-color: rgba(0, 212, 255, 0.4);
         box-shadow: 
             0 30px 80px rgba(0, 0, 0, 0.6),
-            0 0 60px rgba(0, 212, 255, 0.3),
-            inset 0 0 60px rgba(0, 212, 255, 0.08);
+            0 0 60px rgba(0, 212, 255, 0.3);
     }
 
     .tool-card.detective:hover {
         border-color: rgba(181, 55, 242, 0.3);
         box-shadow: 
             0 20px 60px rgba(0, 0, 0, 0.5),
-            0 0 40px rgba(181, 55, 242, 0.2),
-            inset 0 0 40px rgba(181, 55, 242, 0.05);
+            0 0 40px rgba(181, 55, 242, 0.2);
     }
 
     .tool-card.oracle:hover {
         border-color: rgba(255, 0, 110, 0.3);
         box-shadow: 
             0 20px 60px rgba(0, 0, 0, 0.5),
-            0 0 40px rgba(255, 0, 110, 0.2),
-            inset 0 0 40px rgba(255, 0, 110, 0.05);
+            0 0 40px rgba(255, 0, 110, 0.2);
     }
 
     .tool-card.grader:hover {
         border-color: rgba(0, 255, 136, 0.3);
         box-shadow: 
             0 20px 60px rgba(0, 0, 0, 0.5),
-            0 0 40px rgba(0, 255, 136, 0.2),
-            inset 0 0 40px rgba(0, 255, 136, 0.05);
+            0 0 40px rgba(0, 255, 136, 0.2);
     }
 
     .tool-content {
         flex-grow: 1;
         display: flex;
         flex-direction: column;
+        position: relative;
+        z-index: 2;
     }
 
     .tool-icon {
@@ -159,70 +155,14 @@
 
     .tool-desc {
         color: rgba(255, 255, 255, 0.6);
-        margin-bottom: 20px;
         line-height: 1.6;
         font-size: 15px;
         font-weight: 400;
-        flex-grow: 1;
     }
 
     .tool-card.architect .tool-desc {
         font-size: 17px;
         line-height: 1.7;
-    }
-
-    .tool-price {
-        font-size: 32px;
-        font-weight: 700;
-        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-top: auto;
-        padding-top: 20px;
-    }
-
-    .tool-card.architect .tool-price {
-        font-size: 38px;
-    }
-
-    .tool-card.detective .tool-price {
-        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .tool-card.oracle .tool-price {
-        background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .tool-card.grader .tool-price {
-        background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-    }
-
-    .tool-badge {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        background: rgba(0, 212, 255, 0.15);
-        border: 1px solid rgba(0, 212, 255, 0.3);
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        color: #00d4ff;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    .tool-card.architect .tool-badge {
-        background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(181, 55, 242, 0.2));
-        border-color: rgba(0, 212, 255, 0.4);
-        font-size: 13px;
-        padding: 8px 18px;
     }
 
     @media (max-width: 1200px) {
@@ -281,15 +221,7 @@
         }
 
         .tool-card.architect .tool-desc {
-            font-size: 15px;
-        }
-
-        .tool-price {
-            font-size: 28px;
-        }
-
-        .tool-card.architect .tool-price {
-            font-size: 32px;
+            font-size: 16px;
         }
     }
 </style>
@@ -299,54 +231,48 @@
 <h1 class="page-title">⚡ Control Center</h1>
 
 <div class="bento-grid">
-    <a href="{{ url_for('tool_writer') }}" class="tool-card architect" data-tilt data-tilt-max="5" data-tilt-speed="400" data-tilt-perspective="1000">
-        <div class="tool-badge">Flagship</div>
+    <a href="{{ url_for('tool_writer') }}" class="tool-card architect">
         <div class="tool-content">
             <span class="tool-icon">✍️</span>
             <h3 class="tool-title">The Architect</h3>
             <p class="tool-desc">AI Essay Writer with dynamic pricing and citation verification. Human-like style, no AI buzzwords, real academic sources. Powered by 3-agent refinement system.</p>
         </div>
-        <div class="tool-price">£10 - £120</div>
     </a>
 
-    <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+    <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective">
         <div class="tool-content">
             <span class="tool-icon">🔍</span>
             <h3 class="tool-title">The Detective</h3>
             <p class="tool-desc">3-Agent plagiarism team hunts sources, analyzes similarity, generates PDF report with verified links.</p>
         </div>
-        <div class="tool-price">£10</div>
     </a>
 
-    <a href="{{ url_for('tool_detector') }}" class="tool-card oracle" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+    <a href="{{ url_for('tool_detector') }}" class="tool-card oracle">
         <div class="tool-content">
             <span class="tool-icon">🔮</span>
             <h3 class="tool-title">The Oracle</h3>
             <p class="tool-desc">AI content detector identifies AI-generated text with detailed pattern analysis and probability scoring.</p>
         </div>
-        <div class="tool-price">£10</div>
     </a>
 
-    <a href="{{ url_for('tool_grader') }}" class="tool-card grader" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+    <a href="{{ url_for('tool_grader') }}" class="tool-card grader">
         <div class="tool-content">
             <span class="tool-icon">📊</span>
             <h3 class="tool-title">The Grader</h3>
             <p class="tool-desc">Strict assignment marking by 3 professors with actionable feedback and comprehensive evaluation.</p>
         </div>
-        <div class="tool-price">£10</div>
     </a>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js"></script>
 <script>
-    // Track mouse position for glow effect
+    // AURORA SPOTLIGHT - Track mouse position for each card
     document.querySelectorAll('.tool-card').forEach(card => {
         card.addEventListener('mousemove', (e) => {
             const rect = card.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 100;
-            const y = ((e.clientY - rect.top) / rect.height) * 100;
-            card.style.setProperty('--mouse-x', `${x}%`);
-            card.style.setProperty('--mouse-y', `${y}%`);
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            card.style.setProperty('--mouse-x', `${x}px`);
+            card.style.setProperty('--mouse-y', `${y}px`);
         });
     });
 </script>
