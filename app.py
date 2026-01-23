@@ -349,32 +349,45 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - Essay Writer with Citation Verification
+# TOOL B: The Architect - Essay Writer with Smart Word Count Logic
 def generate_essay_stream(instructions, word_count):
     yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening ({word_count} words)...'})}\n\n"
+    
+    # Calculate buffer (15% extra)
+    max_word_count = int(word_count * 1.15)
     
     # Initial draft
     yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (human-like style)...'})}\n\n"
     
     writer_prompt = f"""You are Prof. Quill, a human ghostwriter. Write naturally.
 
+CRITICAL WORD COUNT RULES:
+1. TARGET: {word_count} words for the BODY TEXT ONLY (Introduction, Analysis, Conclusion)
+2. MAXIMUM ALLOWED: {max_word_count} words for body text (+15% buffer)
+3. EXCLUSION: The References/Bibliography section is EXCLUDED from this word count limit
+4. DO NOT shorten the essay to fit references within the limit
+5. Write the full essay body first, THEN add a complete References section separately
+
 STYLE RULES:
 - NO AI buzzwords: delve, tapestry, multifaceted, landscape, realm
-- Vary sentence length
-- Use contractions occasionally
-- Minor stylistic imperfections
-- Personal voice
+- Vary sentence length (mix short and long sentences)
+- Use contractions occasionally (it's, don't, can't)
+- Minor stylistic imperfections for authenticity
+- Personal voice and natural flow
 
-CONTENT:
-- Target: {word_count} words
-- Include REAL academic citations (Harvard/APA)
-- Every claim needs citation
+CONTENT REQUIREMENTS:
+- Include REAL academic citations (Harvard/APA format)
+- Every major claim needs a citation
+- Use credible academic sources only
+- Full References/Bibliography section at the end (NOT counted in word limit)
 
 INSTRUCTIONS:
-{instructions}"""
+{instructions}
+
+Remember: Write {word_count} words of body content, then add references separately."""
 
     try:
-        current_draft = call_claude(writer_prompt)
+        current_draft = call_claude(writer_prompt, max_tokens=6000)
         yield f"data: {json.dumps({'type': 'log', 'message': '✅ Initial draft complete'})}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
@@ -390,7 +403,19 @@ INSTRUCTIONS:
         # Dr. Strict grades
         yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Dr. Strict grading...'})}\n\n"
         
-        examiner_prompt = f"Grade this essay (0-100).\n\nINSTRUCTIONS: {instructions}\nESSAY: {current_draft}\n\nScore format: 'Score: [number]'"
+        examiner_prompt = f"""Grade this essay (0-100).
+
+INSTRUCTIONS: {instructions}
+
+ESSAY: {current_draft}
+
+Evaluation criteria:
+- Content quality and depth
+- Argument structure and coherence
+- Citation usage and academic rigor
+- Writing style and clarity
+
+Provide a score (0-100) in format: 'Score: [number]'"""
         
         try:
             examiner_response = call_gpt4(examiner_prompt)
@@ -416,39 +441,48 @@ INSTRUCTIONS:
         # Citation verification
         yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Dean Logic verifying citations...'})}\n\n"
         
-        citation_prompt = f"""Verify ALL citations in this essay. Check if papers exist.
+        citation_prompt = f"""Verify ALL citations in this essay. Check if papers/sources exist and are credible.
 
 ESSAY: {current_draft}
 
 For each citation:
-1. Extract full citation
-2. Verify if paper exists
-3. Check relevance
+1. Extract full citation details
+2. Verify if source exists and is credible
+3. Check relevance to the claim
 4. Mark: VERIFIED / SUSPICIOUS / FAKE
 
-Return JSON with fake_count."""
+Return JSON format with verification results and fake_count."""
 
         try:
             citation_response = call_gemini(citation_prompt)
             if "FAKE" in citation_response or "SUSPICIOUS" in citation_response:
-                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Fake citations detected!'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Fake/suspicious citations detected!'})}\n\n"
         except:
             citation_response = "Citation check error"
 
         # Revise
         yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising...'})}\n\n"
         
-        refine_prompt = f"""Revise based on feedback. Replace fake citations.
+        refine_prompt = f"""Revise the essay based on feedback. Replace any fake or suspicious citations with real ones.
 
-INSTRUCTIONS: {instructions}
-CURRENT: {current_draft}
-FEEDBACK: {examiner_response}
-CITATIONS: {citation_response}
+CRITICAL WORD COUNT RULES (MUST FOLLOW):
+1. TARGET: {word_count} words for BODY TEXT ONLY
+2. MAXIMUM: {max_word_count} words for body text (+15% buffer)
+3. References/Bibliography is EXCLUDED from word count
+4. DO NOT cut essay content to fit references in the limit
 
-Target {word_count} words. No AI buzzwords."""
+ORIGINAL INSTRUCTIONS: {instructions}
+
+CURRENT DRAFT: {current_draft}
+
+EXAMINER FEEDBACK: {examiner_response}
+
+CITATION VERIFICATION: {citation_response}
+
+Improve the essay while maintaining {word_count} words of body content (excluding references). No AI buzzwords."""
 
         try:
-            current_draft = call_claude(refine_prompt)
+            current_draft = call_claude(refine_prompt, max_tokens=6000)
             yield f"data: {json.dumps({'type': 'log', 'message': '✅ Revision complete'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"

@@ -4,85 +4,280 @@
 
 {% block extra_css %}
 <style>
-    .page-title {
-        font-size: 36px;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 50px;
-        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple), var(--neon-pink));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    * {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    .tools-grid {
+    body {
+        background: #050505;
+        overflow-x: hidden;
+    }
+
+    .page-title {
+        font-size: 48px;
+        font-weight: 800;
+        text-align: center;
+        margin-bottom: 60px;
+        background: linear-gradient(135deg, #00d4ff, #b537f2, #ff006e);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.02em;
+    }
+
+    .bento-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 30px;
-        margin-bottom: 50px;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, 280px);
+        gap: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 40px;
+    }
+
+    /* The Architect - Flagship Tool (Large Card) */
+    .tool-card.architect {
+        grid-column: span 2;
+        grid-row: span 2;
+    }
+
+    /* Other Tools */
+    .tool-card.detective {
+        grid-column: span 2;
+        grid-row: span 1;
+    }
+
+    .tool-card.oracle {
+        grid-column: span 2;
+        grid-row: span 1;
+    }
+
+    .tool-card.grader {
+        grid-column: span 2;
+        grid-row: span 1;
     }
 
     .tool-card {
-        background: var(--glass-bg);
+        background: rgba(15, 15, 15, 0.6);
         backdrop-filter: blur(20px);
         border-radius: 24px;
         padding: 40px;
-        border: 2px solid var(--glass-border);
-        transition: all 0.4s;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
         text-decoration: none;
-        display: block;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+        transform-style: preserve-3d;
+    }
+
+    .tool-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(0, 212, 255, 0.15), transparent 50%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+    }
+
+    .tool-card:hover::before {
+        opacity: 1;
     }
 
     .tool-card:hover {
-        transform: translateY(-10px);
-        box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3);
+        border-color: rgba(0, 212, 255, 0.3);
+        box-shadow: 
+            0 20px 60px rgba(0, 0, 0, 0.5),
+            0 0 40px rgba(0, 212, 255, 0.2),
+            inset 0 0 40px rgba(0, 212, 255, 0.05);
+        transform: translateY(-5px);
     }
 
     .tool-card.architect:hover {
-        border-color: var(--neon-blue);
-        box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3);
+        border-color: rgba(0, 212, 255, 0.4);
+        box-shadow: 
+            0 30px 80px rgba(0, 0, 0, 0.6),
+            0 0 60px rgba(0, 212, 255, 0.3),
+            inset 0 0 60px rgba(0, 212, 255, 0.08);
     }
 
     .tool-card.detective:hover {
-        border-color: var(--neon-purple);
-        box-shadow: 0 20px 60px rgba(181, 55, 242, 0.3);
+        border-color: rgba(181, 55, 242, 0.3);
+        box-shadow: 
+            0 20px 60px rgba(0, 0, 0, 0.5),
+            0 0 40px rgba(181, 55, 242, 0.2),
+            inset 0 0 40px rgba(181, 55, 242, 0.05);
     }
 
     .tool-card.oracle:hover {
-        border-color: var(--neon-pink);
-        box-shadow: 0 20px 60px rgba(255, 0, 110, 0.3);
+        border-color: rgba(255, 0, 110, 0.3);
+        box-shadow: 
+            0 20px 60px rgba(0, 0, 0, 0.5),
+            0 0 40px rgba(255, 0, 110, 0.2),
+            inset 0 0 40px rgba(255, 0, 110, 0.05);
     }
 
     .tool-card.grader:hover {
-        border-color: var(--neon-green);
-        box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
+        border-color: rgba(0, 255, 136, 0.3);
+        box-shadow: 
+            0 20px 60px rgba(0, 0, 0, 0.5),
+            0 0 40px rgba(0, 255, 136, 0.2),
+            inset 0 0 40px rgba(0, 255, 136, 0.05);
     }
 
     .tool-icon {
-        font-size: 64px;
+        font-size: 72px;
         margin-bottom: 20px;
         display: block;
+        filter: drop-shadow(0 4px 12px rgba(0, 212, 255, 0.3));
+    }
+
+    .tool-card.architect .tool-icon {
+        font-size: 96px;
+        margin-bottom: 30px;
     }
 
     .tool-title {
-        font-size: 24px;
+        font-size: 28px;
         font-weight: 700;
-        margin-bottom: 10px;
-        color: var(--text-primary);
+        margin-bottom: 12px;
+        color: #ffffff;
+        letter-spacing: -0.01em;
+    }
+
+    .tool-card.architect .tool-title {
+        font-size: 42px;
+        margin-bottom: 20px;
     }
 
     .tool-desc {
-        color: var(--text-secondary);
+        color: rgba(255, 255, 255, 0.6);
         margin-bottom: 20px;
         line-height: 1.6;
+        font-size: 15px;
+        font-weight: 400;
+    }
+
+    .tool-card.architect .tool-desc {
+        font-size: 17px;
+        line-height: 1.7;
     }
 
     .tool-price {
-        font-size: 28px;
+        font-size: 32px;
         font-weight: 700;
         background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
+        margin-top: auto;
+    }
+
+    .tool-card.architect .tool-price {
+        font-size: 38px;
+    }
+
+    .tool-badge {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 212, 255, 0.15);
+        border: 1px solid rgba(0, 212, 255, 0.3);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #00d4ff;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .tool-card.architect .tool-badge {
+        background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(181, 55, 242, 0.2));
+        border-color: rgba(0, 212, 255, 0.4);
+        font-size: 13px;
+        padding: 8px 18px;
+    }
+
+    @media (max-width: 1200px) {
+        .bento-grid {
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: auto;
+        }
+
+        .tool-card.architect {
+            grid-column: span 2;
+            grid-row: span 1;
+        }
+
+        .tool-card.detective,
+        .tool-card.oracle,
+        .tool-card.grader {
+            grid-column: span 1;
+            grid-row: span 1;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .bento-grid {
+            grid-template-columns: 1fr;
+            gap: 15px;
+            padding: 0 20px;
+        }
+
+        .tool-card.architect,
+        .tool-card.detective,
+        .tool-card.oracle,
+        .tool-card.grader {
+            grid-column: span 1;
+            grid-row: span 1;
+        }
+
+        .page-title {
+            font-size: 36px;
+            margin-bottom: 40px;
+        }
+
+        .tool-card {
+            padding: 30px;
+        }
+
+        .tool-icon {
+            font-size: 56px;
+        }
+
+        .tool-card.architect .tool-icon {
+            font-size: 72px;
+        }
+
+        .tool-title {
+            font-size: 24px;
+        }
+
+        .tool-card.architect .tool-title {
+            font-size: 32px;
+        }
+    }
+
+    /* Ambient background glow */
+    .container::before {
+        content: '';
+        position: fixed;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle at 30% 50%, rgba(0, 212, 255, 0.03), transparent 50%),
+                    radial-gradient(circle at 70% 50%, rgba(181, 55, 242, 0.03), transparent 50%);
+        pointer-events: none;
+        z-index: -1;
     }
 </style>
 {% endblock %}
@@ -91,34 +286,57 @@
 <div class="container">
     <h1 class="page-title">⚡ Control Center</h1>
 
-    <div class="tools-grid">
-        <a href="{{ url_for('tool_writer') }}" class="tool-card architect">
-            <span class="tool-icon">✍️</span>
-            <h3 class="tool-title">The Architect</h3>
-            <p class="tool-desc">AI Essay Writer with Citation Verification. Human-like style, no AI buzzwords, real academic sources.</p>
-            <div class="tool-price">£20 - £40</div>
+    <div class="bento-grid">
+        <a href="{{ url_for('tool_writer') }}" class="tool-card architect" data-tilt data-tilt-max="5" data-tilt-speed="400" data-tilt-perspective="1000">
+            <div class="tool-badge">Flagship</div>
+            <div>
+                <span class="tool-icon">✍️</span>
+                <h3 class="tool-title">The Architect</h3>
+                <p class="tool-desc">AI Essay Writer with dynamic pricing and citation verification. Human-like style, no AI buzzwords, real academic sources. Powered by 3-agent refinement system.</p>
+            </div>
+            <div class="tool-price">£10 - £120</div>
         </a>
 
-        <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective">
-            <span class="tool-icon">🔍</span>
-            <h3 class="tool-title">The Detective</h3>
-            <p class="tool-desc">3-Agent Plagiarism Team. Hunts sources, analyzes similarity, generates PDF report with verified links.</p>
+        <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+            <div>
+                <span class="tool-icon">🔍</span>
+                <h3 class="tool-title">The Detective</h3>
+                <p class="tool-desc">3-Agent plagiarism team hunts sources, analyzes similarity, generates PDF report with verified links.</p>
+            </div>
             <div class="tool-price">£10</div>
         </a>
 
-        <a href="{{ url_for('tool_detector') }}" class="tool-card oracle">
-            <span class="tool-icon">🔮</span>
-            <h3 class="tool-title">The Oracle</h3>
-            <p class="tool-desc">AI Content Detector. Identifies AI-generated text with detailed pattern analysis.</p>
+        <a href="{{ url_for('tool_detector') }}" class="tool-card oracle" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+            <div>
+                <span class="tool-icon">🔮</span>
+                <h3 class="tool-title">The Oracle</h3>
+                <p class="tool-desc">AI content detector identifies AI-generated text with detailed pattern analysis and probability scoring.</p>
+            </div>
             <div class="tool-price">£10</div>
         </a>
 
-        <a href="{{ url_for('tool_grader') }}" class="tool-card grader">
-            <span class="tool-icon">📊</span>
-            <h3 class="tool-title">The Grader</h3>
-            <p class="tool-desc">Strict Assignment Marking. All 3 professors grade against your brief with actionable feedback.</p>
-            <div class="tool-price">£15</div>
+        <a href="{{ url_for('tool_grader') }}" class="tool-card grader" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+            <div>
+                <span class="tool-icon">📊</span>
+                <h3 class="tool-title">The Grader</h3>
+                <p class="tool-desc">Strict assignment marking by 3 professors with actionable feedback and comprehensive evaluation.</p>
+            </div>
+            <div class="tool-price">£10</div>
         </a>
     </div>
 </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js"></script>
+<script>
+    // Track mouse position for glow effect
+    document.querySelectorAll('.tool-card').forEach(card => {
+        card.addEventListener('mousemove', (e) => {
+            const rect = card.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            card.style.setProperty('--mouse-x', `${x}%`);
+            card.style.setProperty('--mouse-y', `${y}%`);
+        });
+    });
+</script>
 {% endblock %}
