@@ -286,7 +286,7 @@
 </div>
 
 <script>
-    const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
+    const stripe = Stripe('{{ config["STRIPE_PUBLISHABLE_KEY"] }}');
     
     const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');

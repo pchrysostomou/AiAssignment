@@ -35,6 +35,9 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['REPORTS_FOLDER'] = 'reports'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+# FIX: Add Stripe Publishable Key to config so templates can access it
+app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
 
@@ -47,9 +50,16 @@ login_manager.login_view = 'login'
 stripe_key = os.getenv('STRIPE_SECRET_KEY', '')
 if stripe_key:
     stripe.api_key = stripe_key
-    print(f"✅ Stripe Key Loaded (ending: ...{stripe_key[-4:]})")
+    print(f"✅ Stripe Secret Key Loaded (ending: ...{stripe_key[-4:]})")
 else:
     print("⚠️ WARNING: STRIPE_SECRET_KEY not found in environment variables")
+
+# FIX: Log Stripe Publishable Key status
+stripe_pub_key = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+if stripe_pub_key:
+    print(f"✅ Stripe Publishable Key Loaded (ending: ...{stripe_pub_key[-4:]})")
+else:
+    print("⚠️ WARNING: STRIPE_PUBLISHABLE_KEY not found in environment variables")
 
 DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
 

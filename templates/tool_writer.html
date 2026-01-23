@@ -416,7 +416,7 @@
 </div>
 
 <script>
-    const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
+    const stripe = Stripe('{{ config["STRIPE_PUBLISHABLE_KEY"] }}');
     let currentEssayId = null;
     let contextFiles = [];
 
