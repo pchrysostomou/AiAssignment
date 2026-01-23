@@ -198,6 +198,27 @@
         color: var(--neon-green);
         font-weight: bold;
     }
+
+    .price-badge {
+        background: rgba(0, 255, 136, 0.1);
+        border: 2px solid var(--neon-green);
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .price-badge-label {
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-bottom: 5px;
+    }
+
+    .price-badge-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--neon-green);
+    }
 </style>
 {% endblock %}
 
@@ -219,13 +240,18 @@
             </ul>
         </div>
 
+        <div class="price-badge">
+            <div class="price-badge-label">Fixed Price</div>
+            <div class="price-badge-value">£10</div>
+        </div>
+
         <form id="graderForm">
             <div class="section-title">1. Upload Assignment Brief</div>
             <div class="upload-zone" id="briefZone">
                 <div class="upload-icon">📋</div>
                 <div class="upload-text">Upload Assignment Brief</div>
-                <div class="upload-subtext">PDF, DOCX, or TXT</div>
-                <input type="file" id="briefInput" accept=".pdf,.docx,.txt" style="display: none;">
+                <div class="upload-subtext">PDF or DOCX</div>
+                <input type="file" id="briefInput" accept=".pdf,.docx" style="display: none;">
             </div>
             <div class="uploaded-file" id="briefFile">
                 <span>📄</span>
@@ -236,15 +262,15 @@
             <div class="upload-zone" id="essayZone">
                 <div class="upload-icon">📝</div>
                 <div class="upload-text">Upload Student Essay</div>
-                <div class="upload-subtext">PDF, DOCX, or TXT</div>
-                <input type="file" id="essayInput" accept=".pdf,.docx,.txt" style="display: none;">
+                <div class="upload-subtext">PDF or DOCX</div>
+                <input type="file" id="essayInput" accept=".pdf,.docx" style="display: none;">
             </div>
             <div class="uploaded-file" id="essayFile">
                 <span>📄</span>
                 <span id="essayFileName"></span>
             </div>
 
-            <button type="submit" class="btn-neon" id="gradeBtn">Grade Assignment (£15)</button>
+            <button type="submit" class="btn-neon" id="gradeBtn">Grade Assignment (£10)</button>
         </form>
 
         <div class="result-box" id="resultBox">
@@ -356,7 +382,7 @@
             if (session.error) {
                 alert('Error: ' + session.error);
                 gradeBtn.disabled = false;
-                gradeBtn.textContent = 'Grade Assignment (£15)';
+                gradeBtn.textContent = 'Grade Assignment (£10)';
                 return;
             }
 
@@ -364,7 +390,7 @@
         } catch (error) {
             alert('Error: ' + error.message);
             gradeBtn.disabled = false;
-            gradeBtn.textContent = 'Grade Assignment (£15)';
+            gradeBtn.textContent = 'Grade Assignment (£10)';
         }
     });
 
@@ -428,7 +454,7 @@
             alert('Error: ' + error.message);
         } finally {
             gradeBtn.disabled = false;
-            gradeBtn.textContent = 'Grade Assignment (£15)';
+            gradeBtn.textContent = 'Grade Assignment (£10)';
         }
     }
 </script>

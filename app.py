@@ -52,12 +52,12 @@ else:
 
 DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
 
+# Updated pricing structure
 PRICING = {
-    'essay_std': {'price': 2000, 'display': '£20', 'words': 2000},
-    'essay_ext': {'price': 4000, 'display': '£40', 'words': 4000},
+    'writer': {'price_per_1k': 1000, 'display': '£10 per 1,000 words'},  # Dynamic pricing
     'plagiarism': {'price': 1000, 'display': '£10'},
     'ai_check': {'price': 1000, 'display': '£10'},
-    'grader': {'price': 1500, 'display': '£15'}
+    'grader': {'price': 1000, 'display': '£10'}  # Updated to £10
 }
 
 anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
@@ -118,15 +118,18 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'docx', 'txt'}
 
 def extract_text_from_pdf(file_path):
+    """Extract text from PDF file"""
     with open(file_path, 'rb') as file:
         pdf_reader = PyPDF2.PdfReader(file)
         return "\n".join([page.extract_text() for page in pdf_reader.pages]).strip()
 
 def extract_text_from_docx(file_path):
+    """Extract text from DOCX file"""
     doc = Document(file_path)
     return "\n".join([p.text for p in doc.paragraphs]).strip()
 
-def parse_uploaded_file(file_path, filename):
+def extract_text_from_file(file_path, filename):
+    """Helper function to extract text from PDF or DOCX files"""
     ext = filename.rsplit('.', 1)[1].lower()
     if ext == 'pdf':
         return extract_text_from_pdf(file_path)
@@ -136,6 +139,10 @@ def parse_uploaded_file(file_path, filename):
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
     raise Exception("Unsupported file type")
+
+def parse_uploaded_file(file_path, filename):
+    """Parse uploaded file and extract text"""
+    return extract_text_from_file(file_path, filename)
 
 # AI Helper Functions
 def call_with_retry(func, max_retries=3):
@@ -687,16 +694,16 @@ def support_chat():
         system_prompt = """You are The Concierge, the helpful support agent for The Academic Board.
 
 PRICING:
-- Essay Writer: £20 (2000 words) or £40 (4000 words)
+- Essay Writer: £10 per 1,000 words (1,000-12,000 words range)
 - Plagiarism Check: £10
 - AI Detector: £10
-- Assignment Grader: £15
+- Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with citation verification
+- The Architect: AI essay writer with dynamic pricing and citation verification
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
-- The Grader: Strict assignment marking
+- The Grader: Strict assignment marking (now £10)
 
 Be polite, concise, and helpful. Troubleshoot errors and explain features."""
         
@@ -737,7 +744,7 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        text = parse_uploaded_file(filepath, filename)
+        text = extract_text_from_file(filepath, filename)
         os.remove(filepath)
         
         return jsonify({'success': True, 'text': text})
@@ -754,24 +761,31 @@ def create_checkout_session():
         if tool_type not in PRICING:
             return jsonify({'error': 'Invalid tool'}), 400
         
-        pricing = PRICING[tool_type]
-        session['pending_task'] = {'tool_type': tool_type, 'data': data}
+        # Calculate amount based on tool type
+        if tool_type == 'writer':
+            # Dynamic pricing for writer
+            word_count = data.get('word_count', 2000)
+            amount = int((word_count / 1000) * PRICING['writer']['price_per_1k'])
+            product_name = f'Essay Writing ({word_count:,} words)'
+        else:
+            # Fixed pricing for other tools
+            amount = PRICING[tool_type]['price']
+            product_names = {
+                'plagiarism': 'Plagiarism Check',
+                'ai_check': 'AI Detection',
+                'grader': 'Assignment Grading'
+            }
+            product_name = product_names.get(tool_type, 'Academic Tool')
         
-        product_names = {
-            'essay_std': 'Essay Writing (2000 words)',
-            'essay_ext': 'Essay Writing (4000 words)',
-            'plagiarism': 'Plagiarism Check',
-            'ai_check': 'AI Detection',
-            'grader': 'Assignment Grading'
-        }
+        session['pending_task'] = {'tool_type': tool_type, 'data': data}
         
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
                     'currency': 'gbp',
-                    'unit_amount': pricing['price'],
-                    'product_data': {'name': product_names.get(tool_type, 'Academic Tool')},
+                    'unit_amount': amount,
+                    'product_data': {'name': product_name},
                 },
                 'quantity': 1,
             }],
@@ -812,8 +826,7 @@ def payment_success():
                 
                 # Redirect to appropriate tool
                 tool_routes = {
-                    'essay_std': 'tool_writer',
-                    'essay_ext': 'tool_writer',
+                    'writer': 'tool_writer',
                     'plagiarism': 'tool_plagiarism',
                     'ai_check': 'tool_detector',
                     'grader': 'tool_grader'
