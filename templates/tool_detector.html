@@ -1,0 +1,461 @@
+{% extends "base.html" %}
+
+{% block title %}The Oracle - AI Detector{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .page-header p {
+        color: var(--text-secondary);
+        font-size: 16px;
+    }
+
+    .tool-section {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+        margin-bottom: 30px;
+        max-width: 800px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: var(--neon-pink);
+    }
+
+    .upload-zone {
+        border: 2px dashed var(--glass-border);
+        border-radius: 16px;
+        padding: 60px 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: rgba(255, 0, 110, 0.02);
+        margin-bottom: 20px;
+    }
+
+    .upload-zone:hover {
+        border-color: var(--neon-pink);
+        background: rgba(255, 0, 110, 0.05);
+    }
+
+    .upload-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    textarea {
+        width: 100%;
+        min-height: 300px;
+        padding: 20px;
+        background: var(--bg-deep);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 15px;
+        font-family: inherit;
+        resize: vertical;
+    }
+
+    textarea:focus {
+        outline: none;
+        border-color: var(--neon-pink);
+        box-shadow: 0 0 20px rgba(255, 0, 110, 0.2);
+    }
+
+    .btn-neon {
+        width: 100%;
+        padding: 18px;
+        background: rgba(255, 0, 110, 0.1);
+        border: 2px solid var(--neon-pink);
+        border-radius: 12px;
+        color: white;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
+        margin-top: 20px;
+    }
+
+    .btn-neon::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+        transform: skewX(-30deg);
+        transition: left 0.5s;
+        z-index: -1;
+    }
+
+    .btn-neon:hover::before {
+        left: 0;
+    }
+
+    .btn-neon:hover {
+        border-color: transparent;
+        box-shadow: 0 8px 25px rgba(255, 0, 110, 0.5);
+    }
+
+    .btn-neon:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .result-box {
+        background: var(--glass-bg);
+        border-radius: 16px;
+        padding: 30px;
+        margin-top: 20px;
+        border: 1px solid var(--glass-border);
+        display: none;
+    }
+
+    .result-box.active {
+        display: block;
+    }
+
+    .result-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 15px;
+        color: var(--neon-pink);
+    }
+
+    .probability-meter {
+        width: 100%;
+        height: 40px;
+        background: var(--bg-deep);
+        border-radius: 20px;
+        overflow: hidden;
+        margin: 20px 0;
+        border: 1px solid var(--glass-border);
+    }
+
+    .probability-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--neon-green), var(--neon-pink));
+        transition: width 1s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 16px;
+    }
+
+    .verdict-badge {
+        display: inline-block;
+        padding: 10px 20px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: 18px;
+        margin: 20px 0;
+    }
+
+    .verdict-badge.human {
+        background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+    }
+
+    .verdict-badge.ai {
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+    }
+
+    .indicators-list {
+        background: var(--bg-deep);
+        padding: 20px;
+        border-radius: 12px;
+        margin-top: 20px;
+    }
+
+    .indicators-list h4 {
+        color: var(--neon-pink);
+        margin-bottom: 10px;
+    }
+
+    .indicators-list ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .indicators-list li {
+        padding: 8px 0;
+        color: var(--text-secondary);
+        border-bottom: 1px solid var(--glass-border);
+    }
+
+    .indicators-list li:last-child {
+        border-bottom: none;
+    }
+
+    .info-box {
+        background: rgba(255, 0, 110, 0.1);
+        border: 1px solid var(--neon-pink);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+
+    .info-box h3 {
+        color: var(--neon-pink);
+        margin-bottom: 10px;
+    }
+
+    .info-box ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .info-box li {
+        padding: 5px 0;
+        color: var(--text-secondary);
+    }
+
+    .info-box li::before {
+        content: "✓ ";
+        color: var(--neon-pink);
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>🔮 The Oracle</h1>
+        <p>AI Content Detection with Pattern Analysis</p>
+    </div>
+
+    <div class="tool-section">
+        <div class="info-box">
+            <h3>How The Oracle Works:</h3>
+            <ul>
+                <li><strong>Pattern Analysis:</strong> Detects repetitive phrasing and AI-typical structures</li>
+                <li><strong>Vocabulary Check:</strong> Identifies AI buzzwords and generic transitions</li>
+                <li><strong>Style Evaluation:</strong> Analyzes writing consistency and personal voice</li>
+                <li><strong>Probability Score:</strong> Returns 0-100% likelihood of AI generation</li>
+            </ul>
+        </div>
+
+        <div class="section-title">Upload Document or Paste Text</div>
+        
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📄</div>
+            <div style="font-size: 18px; margin-bottom: 10px;">Drag & Drop or Click to Upload</div>
+            <div style="color: var(--text-secondary); font-size: 14px;">Supports PDF, DOCX, TXT</div>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display: none;">
+        </div>
+
+        <div class="section-title">Or Paste Text Directly</div>
+        <textarea id="aiText" placeholder="Paste the text you want to check for AI generation..."></textarea>
+
+        <button class="btn-neon" id="detectBtn" onclick="startAIDetection()">Detect AI Content (£10)</button>
+
+        <div class="result-box" id="resultBox">
+            <div class="result-title">✅ Analysis Complete!</div>
+            <div class="verdict-badge" id="verdictBadge">-</div>
+            <div class="probability-meter">
+                <div class="probability-fill" id="probabilityFill" style="width: 0%;">0%</div>
+            </div>
+            <div class="indicators-list" id="indicatorsList"></div>
+            <div style="margin-top: 20px; color: var(--text-secondary);" id="explanation"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
+    
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const aiText = document.getElementById('aiText');
+    
+    uploadZone.addEventListener('click', () => fileInput.click());
+    
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--neon-pink)';
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.style.borderColor = 'var(--glass-border)';
+    });
+    
+    uploadZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--glass-border)';
+        
+        const file = e.dataTransfer.files[0];
+        if (file) await handleFileUpload(file);
+    });
+    
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) await handleFileUpload(file);
+    });
+    
+    async function handleFileUpload(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        uploadZone.innerHTML = '<div class="upload-icon">⏳</div><div>Processing file...</div>';
+        
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                aiText.value = data.text;
+                uploadZone.innerHTML = '<div class="upload-icon">✅</div><div>File processed successfully!</div>';
+            } else {
+                alert('Error: ' + data.error);
+                resetUploadZone();
+            }
+        } catch (error) {
+            alert('Upload error: ' + error.message);
+            resetUploadZone();
+        }
+    }
+    
+    function resetUploadZone() {
+        uploadZone.innerHTML = '<div class="upload-icon">📄</div><div style="font-size: 18px; margin-bottom: 10px;">Drag & Drop or Click to Upload</div><div style="color: var(--text-secondary); font-size: 14px;">Supports PDF, DOCX, TXT</div>';
+    }
+    
+    async function startAIDetection() {
+        const text = aiText.value.trim();
+        
+        if (!text) {
+            alert('Please provide text to analyze');
+            return;
+        }
+        
+        const detectBtn = document.getElementById('detectBtn');
+        detectBtn.disabled = true;
+        detectBtn.textContent = 'Processing Payment...';
+        
+        try {
+            sessionStorage.setItem('ai_detection_text', text);
+            
+            const response = await fetch('/create-checkout-session', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    tool_type: 'ai_check',
+                    text: text
+                })
+            });
+            
+            const session = await response.json();
+            
+            if (session.error) {
+                alert('Error: ' + session.error);
+                detectBtn.disabled = false;
+                detectBtn.textContent = 'Detect AI Content (£10)';
+                return;
+            }
+            
+            await stripe.redirectToCheckout({sessionId: session.id});
+        } catch (error) {
+            alert('Error: ' + error.message);
+            detectBtn.disabled = false;
+            detectBtn.textContent = 'Detect AI Content (£10)';
+        }
+    }
+    
+    // Check if returning from payment
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('paid') === 'true') {
+        const savedText = sessionStorage.getItem('ai_detection_text');
+        if (savedText) {
+            aiText.value = savedText;
+            sessionStorage.removeItem('ai_detection_text');
+            performAIDetection(savedText);
+        }
+    }
+    
+    async function performAIDetection(text) {
+        const detectBtn = document.getElementById('detectBtn');
+        detectBtn.disabled = true;
+        detectBtn.textContent = 'Analyzing... (This may take 20-30 seconds)';
+        
+        try {
+            const formData = new FormData();
+            formData.append('text', text);
+            
+            const response = await fetch('/check-ai', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const analysis = JSON.parse(data.analysis);
+                
+                const probability = analysis.ai_probability || 0;
+                const verdict = analysis.verdict || 'UNCERTAIN';
+                const indicators = analysis.indicators || [];
+                const explanation = analysis.explanation || 'No explanation provided';
+                
+                // Update verdict badge
+                const verdictBadge = document.getElementById('verdictBadge');
+                verdictBadge.textContent = verdict.replace('_', ' ');
+                verdictBadge.className = 'verdict-badge ' + (probability > 50 ? 'ai' : 'human');
+                
+                // Update probability meter
+                const probabilityFill = document.getElementById('probabilityFill');
+                probabilityFill.style.width = probability + '%';
+                probabilityFill.textContent = probability + '%';
+                
+                // Update indicators list
+                const indicatorsList = document.getElementById('indicatorsList');
+                if (indicators.length > 0) {
+                    indicatorsList.innerHTML = '<h4>AI Indicators Found:</h4><ul>' + 
+                        indicators.map(ind => `<li>• ${ind}</li>`).join('') + 
+                        '</ul>';
+                } else {
+                    indicatorsList.innerHTML = '<h4>No significant AI indicators detected</h4>';
+                }
+                
+                // Update explanation
+                document.getElementById('explanation').textContent = explanation;
+                
+                document.getElementById('resultBox').classList.add('active');
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        } finally {
+            detectBtn.disabled = false;
+            detectBtn.textContent = 'Detect AI Content (£10)';
+        }
+    }
+</script>
+{% endblock %}

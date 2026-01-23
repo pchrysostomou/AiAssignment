@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - The Academic Board{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .settings-section {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: var(--neon-purple);
+    }
+
+    .form-group {
+        margin-bottom: 25px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+        width: 100%;
+        padding: 15px;
+        background: var(--bg-deep);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 15px;
+        font-family: inherit;
+    }
+
+    input:focus {
+        outline: none;
+        border-color: var(--neon-purple);
+        box-shadow: 0 0 20px rgba(181, 55, 242, 0.2);
+    }
+
+    .btn-save {
+        width: 100%;
+        padding: 16px;
+        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+        border: none;
+        border-radius: 12px;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-save:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(181, 55, 242, 0.5);
+    }
+
+    .info-card {
+        background: rgba(181, 55, 242, 0.1);
+        border: 1px solid var(--neon-purple);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+
+    .info-card h3 {
+        color: var(--neon-purple);
+        margin-bottom: 10px;
+        font-size: 16px;
+    }
+
+    .info-card p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .divider {
+        height: 1px;
+        background: var(--glass-border);
+        margin: 30px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>⚙️ Settings</h1>
+        <p style="color: var(--text-secondary);">Manage your account preferences</p>
+    </div>
+
+    <div class="settings-section">
+        <div class="info-card">
+            <h3>Account Information</h3>
+            <p><strong>Username:</strong> {{ current_user.username }}</p>
+            <p><strong>Email:</strong> {{ current_user.email }}</p>
+            <p><strong>Member Since:</strong> {{ current_user.created_at.strftime('%B %Y') }}</p>
+        </div>
+
+        <div class="section-title">Change Email</div>
+        <form id="emailForm">
+            <div class="form-group">
+                <label for="newEmail">New Email Address</label>
+                <input type="email" id="newEmail" placeholder="Enter new email" required>
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm Password</label>
+                <input type="password" id="confirmPassword" placeholder="Enter your password" required>
+            </div>
+            <button type="submit" class="btn-save">Update Email</button>
+        </form>
+
+        <div class="divider"></div>
+
+        <div class="section-title">Change Password</div>
+        <form id="passwordForm">
+            <div class="form-group">
+                <label for="currentPassword">Current Password</label>
+                <input type="password" id="currentPassword" placeholder="Enter current password" required>
+            </div>
+            <div class="form-group">
+                <label for="newPassword">New Password</label>
+                <input type="password" id="newPassword" placeholder="Enter new password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirmNewPassword">Confirm New Password</label>
+                <input type="password" id="confirmNewPassword" placeholder="Confirm new password" required>
+            </div>
+            <button type="submit" class="btn-save">Update Password</button>
+        </form>
+
+        <div class="divider"></div>
+
+        <div class="info-card" style="background: rgba(255, 0, 110, 0.1); border-color: var(--neon-pink);">
+            <h3 style="color: var(--neon-pink);">⚠️ Settings Feature Coming Soon</h3>
+            <p>The ability to change your email and password is currently under development. For now, please contact support if you need to update your account details.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('emailForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        alert('Email update feature coming soon! Please contact support for assistance.');
+    });
+
+    document.getElementById('passwordForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const newPass = document.getElementById('newPassword').value;
+        const confirmPass = document.getElementById('confirmNewPassword').value;
+
+        if (newPass !== confirmPass) {
+            alert('Passwords do not match!');
+            return;
+        }
+
+        alert('Password update feature coming soon! Please contact support for assistance.');
+    });
+</script>
+{% endblock %}

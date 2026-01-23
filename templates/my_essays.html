@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}My Essays - The Academic Board{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .essays-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 25px;
+    }
+
+    .essay-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        padding: 30px;
+        border-radius: 16px;
+        border: 1px solid var(--glass-border);
+        transition: all 0.3s;
+    }
+
+    .essay-card:hover {
+        transform: translateY(-5px);
+        border-color: var(--neon-blue);
+        box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
+    }
+
+    .essay-card h3 {
+        font-size: 18px;
+        margin-bottom: 15px;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .essay-meta {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        font-size: 13px;
+        color: var(--text-secondary);
+    }
+
+    .score-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-weight: 700;
+        font-size: 14px;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+    }
+
+    .btn-download {
+        width: 100%;
+        padding: 12px;
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid var(--neon-blue);
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+        display: inline-block;
+        text-align: center;
+    }
+
+    .btn-download:hover {
+        background: var(--neon-blue);
+        box-shadow: 0 4px 15px rgba(0, 212, 255, 0.4);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    .empty-state h2 {
+        font-size: 24px;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
+
+    .empty-state a {
+        display: inline-block;
+        margin-top: 20px;
+        padding: 12px 30px;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+        border-radius: 8px;
+        color: white;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s;
+    }
+
+    .empty-state a:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 212, 255, 0.4);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>📝 My Essays</h1>
+        <p style="color: var(--text-secondary);">Your generated essays and documents</p>
+    </div>
+
+    {% if essays %}
+    <div class="essays-grid">
+        {% for essay in essays %}
+        <div class="essay-card">
+            <h3>{{ essay.title }}</h3>
+            <div class="essay-meta">
+                <span>{{ essay.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                <span class="score-badge">{{ essay.final_score }}/100</span>
+            </div>
+            <div class="essay-meta">
+                <span>{{ essay.word_count_limit }} words</span>
+                <span>{{ essay.rounds_used }} rounds</span>
+            </div>
+            <a href="{{ url_for('download_essay', essay_id=essay.id) }}" class="btn-download">Download DOCX</a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📄</div>
+        <h2>No Essays Yet</h2>
+        <p>You haven't generated any essays yet. Start creating your first one!</p>
+        <a href="{{ url_for('tool_writer') }}">Create Essay</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

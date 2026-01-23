@@ -467,6 +467,111 @@ Target {word_count} words. No AI buzzwords."""
     except Exception as e:
         yield f"data: {json.dumps({'type': 'error', 'message': f'DB error: {str(e)}'})}\n\n"
 
+# TOOL C: The Oracle (AI Detection)
+def check_ai_content(text):
+    """Use GPT-4 to detect AI-generated content"""
+    prompt = f"""You are an AI content detection expert. Analyze the following text to determine if it was written by AI or a human.
+
+TEXT TO ANALYZE:
+{text}
+
+Look for AI indicators:
+- Repetitive phrasing patterns
+- Overly formal or perfect grammar
+- Lack of personal voice
+- Generic transitions
+- AI buzzwords (delve, tapestry, multifaceted, landscape, etc.)
+
+Return JSON format:
+{{
+    "ai_probability": 0-100,
+    "indicators": ["list of specific AI indicators found"],
+    "verdict": "HUMAN/LIKELY_HUMAN/UNCERTAIN/LIKELY_AI/AI",
+    "explanation": "brief explanation"
+}}"""
+
+    try:
+        response = call_gpt4(prompt)
+        return response
+    except Exception as e:
+        return json.dumps({"error": str(e), "ai_probability": 0, "verdict": "ERROR"})
+
+# TOOL D: The Grader (Strict Marking)
+def grade_assignment(brief_text, essay_text):
+    """Grade assignment using all 3 professors"""
+    
+    # Prof. Quill - Content Analysis
+    quill_prompt = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
+
+ASSIGNMENT BRIEF:
+{brief_text}
+
+STUDENT ESSAY:
+{essay_text}
+
+Evaluate:
+1. How well does it address the brief?
+2. Content quality and depth
+3. Structure and organization
+
+Provide a score (0-100) and detailed feedback."""
+
+    # Dr. Strict - Technical Grading
+    strict_prompt = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly.
+
+ASSIGNMENT BRIEF:
+{brief_text}
+
+STUDENT ESSAY:
+{essay_text}
+
+Evaluate:
+1. Grammar and writing quality
+2. Citation and referencing
+3. Academic rigor
+
+Provide a score (0-100) and identify specific weaknesses."""
+
+    # Dean Logic - Overall Assessment
+    logic_prompt = f"""You are Dean Logic, the final academic authority. Provide an overall assessment.
+
+ASSIGNMENT BRIEF:
+{brief_text}
+
+STUDENT ESSAY:
+{essay_text}
+
+Provide:
+1. Overall score (0-100)
+2. Key strengths
+3. Critical improvements needed"""
+
+    try:
+        quill_response = call_claude(quill_prompt)
+        quill_score = extract_score(quill_response)
+        
+        strict_response = call_gpt4(strict_prompt)
+        strict_score = extract_score(strict_response)
+        
+        logic_response = call_gemini(logic_prompt)
+        logic_score = extract_score(logic_response)
+        
+        average_score = round((quill_score + strict_score + logic_score) / 3)
+        
+        result = {
+            "average_score": average_score,
+            "quill_score": quill_score,
+            "quill_feedback": quill_response,
+            "strict_score": strict_score,
+            "strict_feedback": strict_response,
+            "logic_score": logic_score,
+            "logic_feedback": logic_response
+        }
+        
+        return json.dumps(result)
+    except Exception as e:
+        return json.dumps({"error": str(e), "average_score": 0})
+
 # Routes
 @app.route('/')
 def index():
@@ -558,15 +663,28 @@ def my_essays():
     essays = Essay.query.filter_by(user_id=current_user.id).order_by(Essay.created_at.desc()).all()
     return render_template('my_essays.html', essays=essays, user=current_user)
 
+@app.route('/settings')
+@login_required
+def settings():
+    return render_template('settings.html', user=current_user)
+
 # API Routes
 @app.route('/api/support', methods=['POST'])
 @login_required
 def support_chat():
-    """The Concierge - AI Support Bot"""
-    data = request.get_json()
-    user_message = data.get('message', '')
-    
-    system_prompt = """You are The Concierge, the helpful support agent for The Academic Board.
+    """The Concierge - AI Support Bot with Error Handling"""
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return jsonify({'reply': 'Please provide a message.'}), 400
+        
+        # Check if OpenAI API key exists
+        if not os.getenv('OPENAI_API_KEY'):
+            return jsonify({'reply': 'System Error: Contact Admin - OpenAI API key not configured.'}), 500
+        
+        system_prompt = """You are The Concierge, the helpful support agent for The Academic Board.
 
 PRICING:
 - Essay Writer: £20 (2000 words) or £40 (4000 words)
@@ -581,8 +699,7 @@ TOOLS:
 - The Grader: Strict assignment marking
 
 Be polite, concise, and helpful. Troubleshoot errors and explain features."""
-    
-    try:
+        
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -595,8 +712,15 @@ Be polite, concise, and helpful. Troubleshoot errors and explain features."""
         
         bot_reply = response.choices[0].message.content
         return jsonify({'reply': bot_reply})
+        
+    except openai.AuthenticationError:
+        return jsonify({'reply': 'System Error: Contact Admin - Invalid API credentials.'}), 500
+    except openai.RateLimitError:
+        return jsonify({'reply': 'System Error: Contact Admin - Rate limit exceeded.'}), 500
+    except openai.APIError as e:
+        return jsonify({'reply': f'System Error: Contact Admin - API error occurred.'}), 500
     except Exception as e:
-        return jsonify({'reply': f'Sorry, I encountered an error: {str(e)}'}), 500
+        return jsonify({'reply': 'System Error: Contact Admin - An unexpected error occurred.'}), 500
 
 @app.route('/upload', methods=['POST'])
 @login_required
@@ -748,6 +872,63 @@ def check_plagiarism():
             'success': True,
             'report_id': report.id,
             'pdf_url': f'/download-report/{report.id}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/check-ai', methods=['POST'])
+@login_required
+def check_ai():
+    text = request.form.get('text')
+    
+    if not text:
+        return jsonify({'error': 'Text required'}), 400
+    
+    try:
+        analysis = check_ai_content(text)
+        
+        report = Report(
+            user_id=current_user.id,
+            tool_type='ai_check',
+            title='AI Detection',
+            result_data=analysis
+        )
+        db.session.add(report)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'report_id': report.id,
+            'analysis': analysis
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/grade-assignment', methods=['POST'])
+@login_required
+def grade_assignment_route():
+    brief = request.form.get('brief')
+    essay = request.form.get('essay')
+    
+    if not brief or not essay:
+        return jsonify({'error': 'Both brief and essay required'}), 400
+    
+    try:
+        grading = grade_assignment(brief, essay)
+        
+        report = Report(
+            user_id=current_user.id,
+            tool_type='grader',
+            title='Assignment Grading',
+            result_data=grading
+        )
+        db.session.add(report)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'report_id': report.id,
+            'grading': grading
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

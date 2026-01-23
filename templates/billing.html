@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Billing History - The Academic Board{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .billing-section {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+    }
+
+    .billing-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .billing-table thead {
+        background: var(--bg-deep);
+    }
+
+    .billing-table th {
+        padding: 15px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--neon-green);
+        border-bottom: 2px solid var(--glass-border);
+    }
+
+    .billing-table td {
+        padding: 15px;
+        border-bottom: 1px solid var(--glass-border);
+        color: var(--text-primary);
+    }
+
+    .billing-table tr:hover {
+        background: rgba(0, 255, 136, 0.05);
+    }
+
+    .tool-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        background: rgba(0, 212, 255, 0.2);
+        color: var(--neon-blue);
+    }
+
+    .amount {
+        font-weight: 700;
+        font-size: 16px;
+        color: var(--neon-green);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 80px 20px;
+        color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    .empty-state h2 {
+        font-size: 24px;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
+
+    @media (max-width: 768px) {
+        .billing-table {
+            font-size: 13px;
+        }
+
+        .billing-table th,
+        .billing-table td {
+            padding: 10px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>💳 Billing History</h1>
+        <p style="color: var(--text-secondary);">Your payment transactions</p>
+    </div>
+
+    <div class="billing-section">
+        {% if payments %}
+        <table class="billing-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Tool</th>
+                    <th>Amount</th>
+                    <th>Transaction ID</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for payment in payments %}
+                <tr>
+                    <td>{{ payment.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <span class="tool-badge">
+                            {% if payment.tool_type == 'essay_std' %}Essay (Standard)
+                            {% elif payment.tool_type == 'essay_ext' %}Essay (Extended)
+                            {% elif payment.tool_type == 'plagiarism' %}Plagiarism Check
+                            {% elif payment.tool_type == 'ai_check' %}AI Detection
+                            {% elif payment.tool_type == 'grader' %}Assignment Grading
+                            {% else %}{{ payment.tool_type }}
+                            {% endif %}
+                        </span>
+                    </td>
+                    <td class="amount">£{{ '%.2f' | format(payment.amount / 100) }}</td>
+                    <td style="font-family: monospace; font-size: 11px;">{{ payment.stripe_session_id[:20] }}...</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">💰</div>
+            <h2>No Payments Yet</h2>
+            <p>You haven't made any purchases yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

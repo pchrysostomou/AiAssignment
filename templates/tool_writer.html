@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+
+{% block title %}The Architect - Essay Writer{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .page-header p {
+        color: var(--text-secondary);
+        font-size: 16px;
+    }
+
+    .tool-section {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+        margin-bottom: 30px;
+        max-width: 800px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: var(--neon-blue);
+    }
+
+    .form-group {
+        margin-bottom: 25px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    select, textarea {
+        width: 100%;
+        padding: 15px;
+        background: var(--bg-deep);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 15px;
+        font-family: inherit;
+    }
+
+    textarea {
+        min-height: 250px;
+        resize: vertical;
+    }
+
+    select:focus, textarea:focus {
+        outline: none;
+        border-color: var(--neon-blue);
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+    }
+
+    .btn-neon {
+        width: 100%;
+        padding: 18px;
+        background: rgba(0, 212, 255, 0.1);
+        border: 2px solid var(--neon-blue);
+        border-radius: 12px;
+        color: white;
+        font-size: 18px;
+        font-weight: 600;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .btn-neon::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+        transform: skewX(-30deg);
+        transition: left 0.5s;
+        z-index: -1;
+    }
+
+    .btn-neon:hover::before {
+        left: 0;
+    }
+
+    .btn-neon:hover {
+        border-color: transparent;
+        box-shadow: 0 8px 25px rgba(0, 212, 255, 0.5);
+    }
+
+    .btn-neon:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .log-console {
+        background: var(--bg-deep);
+        border-radius: 12px;
+        padding: 25px;
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        max-height: 400px;
+        overflow-y: auto;
+        line-height: 1.8;
+        display: none;
+        border: 1px solid var(--glass-border);
+        margin-top: 20px;
+    }
+
+    .log-console.active {
+        display: block;
+    }
+
+    .log-entry {
+        margin-bottom: 8px;
+        opacity: 0;
+        animation: fadeIn 0.3s forwards;
+    }
+
+    @keyframes fadeIn {
+        to { opacity: 1; }
+    }
+
+    .log-entry.score {
+        color: var(--neon-green);
+        font-weight: bold;
+    }
+
+    .result-box {
+        background: var(--glass-bg);
+        border-radius: 16px;
+        padding: 30px;
+        margin-top: 20px;
+        border: 1px solid var(--glass-border);
+        display: none;
+        text-align: center;
+    }
+
+    .result-box.active {
+        display: block;
+    }
+
+    .result-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 15px;
+        color: var(--neon-blue);
+    }
+
+    .info-box {
+        background: rgba(0, 212, 255, 0.1);
+        border: 1px solid var(--neon-blue);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+
+    .info-box h3 {
+        color: var(--neon-blue);
+        margin-bottom: 10px;
+    }
+
+    .info-box ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .info-box li {
+        padding: 5px 0;
+        color: var(--text-secondary);
+    }
+
+    .info-box li::before {
+        content: "✓ ";
+        color: var(--neon-blue);
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>✍️ The Architect</h1>
+        <p>AI Essay Writer with Citation Verification</p>
+    </div>
+
+    <div class="tool-section">
+        <div class="info-box">
+            <h3>How The Architect Works:</h3>
+            <ul>
+                <li><strong>Human-like Writing:</strong> No AI buzzwords, varied sentence length, authentic voice</li>
+                <li><strong>Citation Verification:</strong> Gemini verifies every citation is real and relevant</li>
+                <li><strong>3-Agent Refinement:</strong> Writer, Examiner, and Reviewer collaborate for quality</li>
+                <li><strong>Real Academic Sources:</strong> Only verified papers and publications</li>
+            </ul>
+        </div>
+
+        <form id="writerForm">
+            <div class="form-group">
+                <label for="wordCount">Select Word Count</label>
+                <select id="wordCount" required>
+                    <option value="2000">Standard (2,000 words) - £20</option>
+                    <option value="4000">Extended (4,000 words) - £40</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="instructions">Essay Instructions</label>
+                <textarea id="instructions" placeholder="Enter your essay topic, requirements, and any specific guidelines..." required></textarea>
+            </div>
+
+            <button type="submit" class="btn-neon" id="generateBtn">Pay & Generate Essay</button>
+        </form>
+
+        <div class="log-console" id="logConsole"></div>
+
+        <div class="result-box" id="resultBox">
+            <div class="result-title">✅ Essay Complete!</div>
+            <p id="resultText"></p>
+            <button class="btn-neon" id="downloadBtn" style="margin-top: 20px;">Download Word Document</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
+    let currentEssayId = null;
+
+    document.getElementById('writerForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const wordCount = document.getElementById('wordCount').value;
+        const instructions = document.getElementById('instructions').value;
+
+        if (!instructions.trim()) {
+            alert('Please enter essay instructions');
+            return;
+        }
+
+        const toolType = wordCount === '2000' ? 'essay_std' : 'essay_ext';
+
+        sessionStorage.setItem('pending_essay', JSON.stringify({
+            instructions: instructions,
+            word_count: wordCount
+        }));
+
+        const generateBtn = document.getElementById('generateBtn');
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Processing Payment...';
+
+        try {
+            const response = await fetch('/create-checkout-session', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    tool_type: toolType,
+                    instructions: instructions,
+                    word_count: wordCount
+                })
+            });
+
+            const session = await response.json();
+
+            if (session.error) {
+                alert('Error: ' + session.error);
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Pay & Generate Essay';
+                return;
+            }
+
+            await stripe.redirectToCheckout({sessionId: session.id});
+        } catch (error) {
+            alert('Error: ' + error.message);
+            generateBtn.disabled = false;
+            generateBtn.textContent = 'Pay & Generate Essay';
+        }
+    });
+
+    // Check if returning from payment
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('paid') === 'true') {
+        const savedData = sessionStorage.getItem('pending_essay');
+        if (savedData) {
+            const data = JSON.parse(savedData);
+            document.getElementById('instructions').value = data.instructions;
+            document.getElementById('wordCount').value = data.word_count;
+            sessionStorage.removeItem('pending_essay');
+
+            // Start generation
+            startGeneration(data.instructions, data.word_count);
+        }
+    }
+
+    async function startGeneration(instructions, wordCount) {
+        const generateBtn = document.getElementById('generateBtn');
+        const logConsole = document.getElementById('logConsole');
+        const resultBox = document.getElementById('resultBox');
+
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        logConsole.innerHTML = '';
+        logConsole.classList.add('active');
+        resultBox.classList.remove('active');
+
+        const formData = new FormData();
+        formData.append('instructions', instructions);
+        formData.append('word_count', wordCount);
+
+        const response = await fetch('/generate-essay', {
+            method: 'POST',
+            body: formData
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = JSON.parse(line.slice(6));
+
+                    if (data.type === 'log') {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry';
+                        logEntry.textContent = data.message;
+                        logConsole.appendChild(logEntry);
+                        logConsole.scrollTop = logConsole.scrollHeight;
+
+                    } else if (data.type === 'score') {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry score';
+                        logEntry.textContent = `Round ${data.round}: Score ${data.score}/100`;
+                        logConsole.appendChild(logEntry);
+                        logConsole.scrollTop = logConsole.scrollHeight;
+
+                    } else if (data.type === 'complete') {
+                        currentEssayId = data.essay_id;
+                        document.getElementById('resultText').textContent = `Your essay has been generated with a score of ${data.score}/100!`;
+                        resultBox.classList.add('active');
+
+                        document.getElementById('downloadBtn').onclick = () => {
+                            window.location.href = `/download-essay/${currentEssayId}`;
+                        };
+
+                    } else if (data.type === 'error') {
+                        const logEntry = document.createElement('div');
+                        logEntry.className = 'log-entry';
+                        logEntry.style.color = 'var(--neon-pink)';
+                        logEntry.textContent = '❌ ' + data.message;
+                        logConsole.appendChild(logEntry);
+                    }
+                }
+            }
+        }
+
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Pay & Generate Essay';
+    }
+</script>
+{% endblock %}
