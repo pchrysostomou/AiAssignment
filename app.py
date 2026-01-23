@@ -142,12 +142,12 @@ if google_api_key:
 else:
     print("⚠️ WARNING: GOOGLE_API_KEY not found in environment variables")
 
-# Google Custom Search Engine Configuration - Ensure it's read as string
-GOOGLE_CSE_ID = str(os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772'))
+# Google Custom Search Engine Configuration - Force string type
+GOOGLE_CSE_ID = str(os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772')).strip()
 if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
-    print(f"✅ Google CSE ID Configured: {GOOGLE_CSE_ID} (type: {type(GOOGLE_CSE_ID).__name__})")
+    print(f"✅ Google CSE ID Configured: '{GOOGLE_CSE_ID}' (type: {type(GOOGLE_CSE_ID).__name__}, length: {len(GOOGLE_CSE_ID)})")
 else:
-    print("⚠️ WARNING: GOOGLE_CSE_ID not found in environment variables")
+    print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
 # MOCK EMAIL FUNCTION (For localhost development)
 def send_email_mock(user_email, subject, body):
@@ -253,7 +253,6 @@ def google_search(query, num_results=5):
     
     try:
         # Extract key terms from query (remove common words, limit length)
-        # This makes the query less restrictive and more likely to return results
         words = query.split()
         # Take first 10 meaningful words (skip very short words)
         key_words = [w for w in words if len(w) > 3][:10]
@@ -261,16 +260,25 @@ def google_search(query, num_results=5):
         
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
-            'key': google_api_key,
-            'cx': str(GOOGLE_CSE_ID),  # Ensure CSE ID is string
+            'key': str(google_api_key).strip(),
+            'cx': str(GOOGLE_CSE_ID).strip(),  # Force string and strip whitespace
             'q': search_query,
             'num': num_results
         }
         
         print(f"🔍 Google Search Query: '{search_query}'")
-        print(f"🔍 Using CSE ID: {GOOGLE_CSE_ID}")
+        print(f"🔍 Using CSE ID: '{GOOGLE_CSE_ID}' (length: {len(GOOGLE_CSE_ID)})")
+        print(f"🔍 API Request URL: {url}")
+        print(f"🔍 API Request Params: key=...{str(google_api_key)[-4:]}, cx={GOOGLE_CSE_ID}, q={search_query[:50]}, num={num_results}")
         
         response = requests.get(url, params=params, timeout=10)
+        
+        print(f"🔍 Google API Response Status: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"❌ Google Search API Error: {response.status_code} - {response.text[:200]}")
+            return []
+        
         response.raise_for_status()
         
         data = response.json()
@@ -288,6 +296,8 @@ def google_search(query, num_results=5):
         
     except Exception as e:
         print(f"❌ Google Search error: {str(e)}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         return []
 
 # AI Helper Functions
@@ -305,7 +315,7 @@ def call_claude(prompt, max_tokens=4000):
         raise Exception("Anthropic API key not configured")
     
     def api_call():
-        # TIER 1 FIX: Use claude-3-5-sonnet-20241022 (primary) with claude-3-opus-latest (fallback)
+        # TIER 1 EMERGENCY FIX: Use claude-3-5-sonnet-20241022 with claude-3-haiku-20240307 fallback
         try:
             print(f"🤖 Attempting Claude API call with model: claude-3-5-sonnet-20241022")
             response = anthropic_client.messages.create(
@@ -317,14 +327,14 @@ def call_claude(prompt, max_tokens=4000):
             return response.content[0].text
         except Exception as e:
             print(f"⚠️ claude-3-5-sonnet-20241022 failed: {str(e)}")
-            # Fallback to claude-3-opus-latest (Tier 1 compatible)
-            print(f"🤖 Attempting fallback to claude-3-opus-latest")
+            # EMERGENCY FALLBACK: claude-3-haiku-20240307 (guaranteed high limits for Tier 1)
+            print(f"🤖 EMERGENCY FALLBACK: Attempting claude-3-haiku-20240307")
             response = anthropic_client.messages.create(
-                model="claude-3-opus-latest",
+                model="claude-3-haiku-20240307",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print(f"✅ Claude API call successful with fallback model: claude-3-opus-latest")
+            print(f"✅ Claude API call successful with EMERGENCY FALLBACK model: claude-3-haiku-20240307")
             return response.content[0].text
     
     return call_with_retry(api_call)
@@ -533,7 +543,6 @@ def generate_essay_stream(instructions, word_count):
     research_context = ""
     try:
         # Extract key topics from instructions for targeted search
-        # Use a more flexible search query (first 150 chars, key terms only)
         search_query = instructions[:150]
         search_results = google_search(search_query, num_results=5)
         
@@ -1405,5 +1414,5 @@ with app.app_context():
 
 if __name__ == '__main__':
     # Run with increased timeout for long-running AI operations
-    # Note: Gunicorn timeout should be set to 300s in Render settings
+    # CRITICAL: Gunicorn timeout MUST be set to 300s in Render Start Command: gunicorn --timeout 300 app:app
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
