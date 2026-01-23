@@ -64,6 +64,17 @@ anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 openai.api_key = os.getenv('OPENAI_API_KEY')
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
+# MOCK EMAIL FUNCTION (For localhost development)
+def send_email_mock(user_email, subject, body):
+    """Mock email sender - prints to console instead of sending real emails"""
+    print("\n" + "="*80)
+    print("📧 MOCK EMAIL SENT (Console Log)")
+    print("="*80)
+    print(f"To: {user_email}")
+    print(f"Subject: {subject}")
+    print(f"Body:\n{body}")
+    print("="*80 + "\n")
+
 # Database Models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -789,7 +800,26 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        flash(f'Account created! A welcome email has been sent to {email}.', 'success')
+        # Send mock welcome email
+        email_body = f"""
+Welcome to The Academic Board, {username}!
+
+Your account has been successfully created.
+
+Get started with our premium AI-powered academic tools:
+- The Architect: AI Essay Writer
+- The Detective: Plagiarism Checker
+- The Oracle: AI Content Detector
+- The Grader: Assignment Marking
+
+Login now at: {DOMAIN}
+
+Best regards,
+The Academic Board Team
+        """
+        send_email_mock(email, "Welcome to The Academic Board!", email_body)
+        
+        flash('Welcome aboard! (Check console for mock email)', 'success')
         return redirect(url_for('login'))
     
     return render_template('login.html')
