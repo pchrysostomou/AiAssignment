@@ -2,10 +2,11 @@ import os
 import json
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, flash, Response, stream_with_context, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, Response, stream_with_context, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import anthropic
 import openai
@@ -14,6 +15,8 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
+import stripe
+import PyPDF2
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +26,11 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///ai_architect.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+
+# Ensure upload folder exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize extensions
 db = SQLAlchemy(app)
@@ -30,11 +38,17 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# Stripe configuration
+stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
+STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', 'price_1234567890')  # Your Stripe Price ID
+DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
+
 # Configuration
 MAX_ROUNDS = int(os.getenv('MAX_ROUNDS', 10))
 SUCCESS_THRESHOLD = int(os.getenv('SUCCESS_THRESHOLD', 90))
 STAGNATION_THRESHOLD = float(os.getenv('STAGNATION_THRESHOLD', 1.5))
 HISTORY_PRUNING_START = int(os.getenv('HISTORY_PRUNING_START', 4))
+ALLOWED_EXTENSIONS = {'pdf', 'docx'}
 
 # Initialize AI clients
 anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
@@ -47,6 +61,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
+    credits = db.Column(db.Integer, default=0)  # Track user credits
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     essays = db.relationship('Essay', backref='author', lazy=True)
 
@@ -70,6 +85,44 @@ class Essay(db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+# File handling functions
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def extract_text_from_pdf(file_path):
+    """Extract text from PDF file"""
+    try:
+        with open(file_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text() + "\n"
+            return text.strip()
+    except Exception as e:
+        raise Exception(f"Error reading PDF: {str(e)}")
+
+def extract_text_from_docx(file_path):
+    """Extract text from DOCX file"""
+    try:
+        doc = Document(file_path)
+        text = ""
+        for paragraph in doc.paragraphs:
+            text += paragraph.text + "\n"
+        return text.strip()
+    except Exception as e:
+        raise Exception(f"Error reading DOCX: {str(e)}")
+
+def parse_uploaded_file(file_path, filename):
+    """Parse uploaded file and extract text"""
+    ext = filename.rsplit('.', 1)[1].lower()
+    
+    if ext == 'pdf':
+        return extract_text_from_pdf(file_path)
+    elif ext == 'docx':
+        return extract_text_from_docx(file_path)
+    else:
+        raise Exception("Unsupported file type")
 
 # AI Helper Functions with Retry Logic
 def call_with_retry(func, max_retries=3, delay=2):
@@ -116,7 +169,6 @@ def call_gemini_reviewer(prompt):
 def extract_score(examiner_response):
     """Extract numerical score from examiner response"""
     try:
-        # Look for patterns like "Score: 85" or "85/100" or just "85"
         import re
         matches = re.findall(r'\b(\d{1,3})\b', examiner_response)
         for match in matches:
@@ -130,10 +182,8 @@ def extract_score(examiner_response):
 def build_context(round_num, original_instructions, current_draft, previous_feedback, full_history):
     """Build context based on round number (implements pruning from round 4)"""
     if round_num < HISTORY_PRUNING_START:
-        # Rounds 1-3: Send full history
         return full_history
     else:
-        # Round 4+: Pruned context (original instructions + current draft + last feedback)
         pruned_context = f"""ORIGINAL INSTRUCTIONS:
 {original_instructions}
 
@@ -148,10 +198,10 @@ PREVIOUS ROUND FEEDBACK:
 # Main AI Loop Generator (SSE)
 def generate_essay_stream(instructions):
     """Main AI loop with streaming logs"""
-    yield f"data: {json.dumps({'type': 'log', 'message': '🚀 Starting AI Assignment Architect - PRO SaaS...'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🚀 Initializing AI Assignment Architect...', 'agent': 'system'})}\n\n"
     
     # Step A: Initial Draft by Claude
-    yield f"data: {json.dumps({'type': 'log', 'message': '📝 Step A: Claude 3.5 Sonnet creating initial draft...'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '📝 Writer Agent activating...', 'agent': 'writer'})}\n\n"
     
     writer_prompt = f"""You are an expert academic writer. Create a high-quality essay based on these instructions:
 
@@ -161,9 +211,9 @@ Write a comprehensive, well-structured essay that fully addresses all requiremen
 
     try:
         current_draft = call_claude_writer(writer_prompt)
-        yield f"data: {json.dumps({'type': 'log', 'message': '✅ Initial draft created successfully!'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '✅ Writer has completed the initial draft.', 'agent': 'writer'})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'❌ Error creating initial draft: {str(e)}'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': f'❌ Writer error: {str(e)}', 'agent': 'writer'})}\n\n"
         return
 
     # Initialize tracking variables
@@ -175,13 +225,13 @@ Write a comprehensive, well-structured essay that fully addresses all requiremen
     stop_reason = ""
 
     # Step B: Refinement Loop
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🔄 Step B: Starting refinement loop (Max {MAX_ROUNDS} rounds)...'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🔄 Starting refinement loop (Maximum {MAX_ROUNDS} rounds)...', 'agent': 'system'})}\n\n"
     
     for round_num in range(1, MAX_ROUNDS + 1):
-        yield f"data: {json.dumps({'type': 'log', 'message': f'--- Round {round_num}/{MAX_ROUNDS} ---'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ Round {round_num}/{MAX_ROUNDS} ━━━', 'agent': 'system'})}\n\n"
         
         # 1. Examiner (GPT-4o) grades
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎯 GPT-4o examining and grading...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Examiner Agent analyzing quality...', 'agent': 'examiner'})}\n\n"
         
         examiner_prompt = f"""You are a strict academic examiner. Grade this essay on a scale of 0-100.
 
@@ -198,37 +248,36 @@ Provide a score (0-100) and brief justification. Format: "Score: [number]" follo
             score = extract_score(examiner_response)
             scores.append(score)
             
-            yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': score})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Score: {score}/100'})}\n\n"
+            yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': score, 'agent': 'examiner'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Examiner verdict: {score}/100', 'agent': 'examiner'})}\n\n"
             
-            # Track best version
             if score > best_score:
                 best_score = score
                 best_draft = current_draft
                 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Examiner error: {str(e)}, continuing...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Examiner error: {str(e)}', 'agent': 'examiner'})}\n\n"
             score = 0
             scores.append(0)
 
         # Break Condition A: SUCCESS
         if score >= SUCCESS_THRESHOLD:
             stop_reason = f"SUCCESS: Score {score} >= {SUCCESS_THRESHOLD}"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 {stop_reason}. Stopping early!'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 {stop_reason}! Quality threshold achieved.', 'agent': 'system'})}\n\n"
             break
 
-        # Break Condition B: STAGNATION (check after round 2)
+        # Break Condition B: STAGNATION
         if round_num >= 3:
             recent_scores = scores[-2:]
             if len(recent_scores) == 2:
                 improvement = recent_scores[-1] - recent_scores[-2]
                 if improvement < STAGNATION_THRESHOLD:
-                    stop_reason = f"STAGNATION: Improvement {improvement:.1f} < {STAGNATION_THRESHOLD} over last 2 rounds"
-                    yield f"data: {json.dumps({'type': 'log', 'message': f'⏸️ {stop_reason}. Stopping to save costs.'})}\n\n"
+                    stop_reason = f"STAGNATION: Improvement {improvement:.1f} < {STAGNATION_THRESHOLD}"
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'⏸️ {stop_reason}. Optimization complete.', 'agent': 'system'})}\n\n"
                     break
 
         # 2. Reviewer (Gemini) provides critique
-        yield f"data: {json.dumps({'type': 'log', 'message': '💬 Gemini 1.5 Pro reviewing and providing critique...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '💬 Reviewer Agent providing feedback...', 'agent': 'reviewer'})}\n\n"
         
         reviewer_prompt = f"""You are an expert writing coach. Review this essay and provide specific, actionable feedback for improvement.
 
@@ -249,25 +298,24 @@ Provide detailed critique focusing on:
         try:
             reviewer_response = call_gemini_reviewer(reviewer_prompt)
             previous_feedback = reviewer_response
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📋 Feedback received: {reviewer_response[:200]}...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📋 Reviewer feedback received.', 'agent': 'reviewer'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Reviewer error: {str(e)}, continuing...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Reviewer error: {str(e)}', 'agent': 'reviewer'})}\n\n"
             previous_feedback = "No feedback available due to error."
 
         # Break Condition C: LIMIT
         if round_num == MAX_ROUNDS:
             stop_reason = f"LIMIT: Reached maximum {MAX_ROUNDS} rounds"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🛑 {stop_reason}.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'🛑 {stop_reason}.', 'agent': 'system'})}\n\n"
             break
 
-        # 3. Writer refines based on feedback with context optimization
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Claude refining draft based on feedback...'})}\n\n"
+        # 3. Writer refines based on feedback
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Writer refining based on feedback...', 'agent': 'writer'})}\n\n"
         
-        # Build context (pruned from round 4)
         context = build_context(round_num, instructions, current_draft, previous_feedback, full_history)
         
         if round_num >= HISTORY_PRUNING_START:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'💾 Context pruning active (Round {round_num}+) - Optimizing API costs...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'💾 Context optimization active (Round {round_num}+)', 'agent': 'system'})}\n\n"
         
         refine_prompt = f"""{context}
 
@@ -276,17 +324,17 @@ Based on the feedback above, rewrite and improve the essay. Address all critique
         try:
             current_draft = call_claude_writer(refine_prompt)
             full_history += f"Round {round_num} Feedback:\n{previous_feedback}\n\nRevised Draft {round_num + 1}:\n{current_draft}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Draft refined for round {round_num + 1}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Writer has refined the draft.', 'agent': 'writer'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ Refining error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ Writer error: {str(e)}', 'agent': 'writer'})}\n\n"
             break
 
     # Final results
     if not stop_reason:
         stop_reason = "COMPLETED: All rounds finished"
     
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Process complete! Reason: {stop_reason}'})}\n\n"
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏆 Best Score: {best_score}/100 | Rounds Used: {len(scores)}'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Process complete! {stop_reason}', 'agent': 'system'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🏆 Best Score: {best_score}/100 | Rounds: {len(scores)}', 'agent': 'system'})}\n\n"
     
     # Save to database
     try:
@@ -304,7 +352,7 @@ Based on the feedback above, rewrite and improve the essay. Address all critique
         
         yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': best_score, 'rounds': len(scores)})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(e)}'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(e)}', 'agent': 'system'})}\n\n"
 
 # Routes
 @app.route('/')
@@ -351,7 +399,7 @@ def register():
             flash('Email already registered', 'error')
             return redirect(url_for('register'))
         
-        user = User(username=username, email=email)
+        user = User(username=username, email=email, credits=0)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -372,14 +420,54 @@ def logout():
 @login_required
 def dashboard():
     essays = Essay.query.filter_by(user_id=current_user.id).order_by(Essay.created_at.desc()).all()
-    return render_template('dashboard.html', essays=essays)
+    return render_template('dashboard.html', essays=essays, user=current_user)
+
+@app.route('/upload', methods=['POST'])
+@login_required
+def upload_file():
+    """Handle file upload and text extraction"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type. Only PDF and DOCX allowed.'}), 400
+    
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        # Extract text from file
+        extracted_text = parse_uploaded_file(filepath, filename)
+        
+        # Clean up uploaded file
+        os.remove(filepath)
+        
+        return jsonify({'success': True, 'text': extracted_text})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/generate', methods=['POST'])
 @login_required
 def generate():
+    """Generate essay with credit check"""
+    # Check if user has credits
+    if current_user.credits < 1:
+        return jsonify({'error': 'Insufficient credits. Please purchase credits to continue.'}), 403
+    
     instructions = request.form.get('instructions')
     if not instructions:
         return jsonify({'error': 'Instructions required'}), 400
+    
+    # Deduct credit
+    current_user.credits -= 1
+    db.session.commit()
     
     return Response(
         stream_with_context(generate_essay_stream(instructions)),
@@ -389,6 +477,51 @@ def generate():
             'X-Accel-Buffering': 'no'
         }
     )
+
+@app.route('/create-checkout-session', methods=['POST'])
+@login_required
+def create_checkout_session():
+    """Create Stripe checkout session"""
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price': STRIPE_PRICE_ID,
+                'quantity': 1,
+            }],
+            mode='payment',
+            allow_promotion_codes=True,  # Enable promo codes for testing
+            success_url=DOMAIN + '/payment-success?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=DOMAIN + '/dashboard',
+            client_reference_id=str(current_user.id),
+            customer_email=current_user.email,
+        )
+        return jsonify({'id': checkout_session.id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 403
+
+@app.route('/payment-success')
+@login_required
+def payment_success():
+    """Handle successful payment"""
+    session_id = request.args.get('session_id')
+    
+    if session_id:
+        try:
+            # Verify the session
+            checkout_session = stripe.checkout.Session.retrieve(session_id)
+            
+            if checkout_session.payment_status == 'paid':
+                # Add credit to user
+                current_user.credits += 1
+                db.session.commit()
+                flash('Payment successful! 1 credit added to your account.', 'success')
+            else:
+                flash('Payment verification failed.', 'error')
+        except Exception as e:
+            flash(f'Error verifying payment: {str(e)}', 'error')
+    
+    return redirect(url_for('dashboard'))
 
 @app.route('/download/<int:essay_id>')
 @login_required
@@ -458,9 +591,9 @@ def view_essay(essay_id):
 with app.app_context():
     db.create_all()
     
-    # Create demo user if not exists
+    # Create demo user with 1 free credit
     if not User.query.filter_by(username='demo').first():
-        demo_user = User(username='demo', email='demo@example.com')
+        demo_user = User(username='demo', email='demo@example.com', credits=1)
         demo_user.set_password('demo123')
         db.session.add(demo_user)
         db.session.commit()
