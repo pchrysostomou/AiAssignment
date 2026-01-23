@@ -69,18 +69,6 @@
             gap: 20px;
         }
 
-        .credits-badge {
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 4px 15px rgba(181, 55, 242, 0.3);
-        }
-
         .navbar a {
             color: var(--text-primary);
             text-decoration: none;
@@ -101,11 +89,11 @@
             padding: 0 40px;
         }
 
-        /* Agent Hub - Atoms Style */
+        /* Agent Hub - Minimalist Atoms Style */
         .agent-hub {
             display: flex;
             justify-content: center;
-            gap: 60px;
+            gap: 80px;
             margin-bottom: 50px;
             padding: 40px;
             background: var(--glass-bg);
@@ -120,7 +108,6 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 15px;
             cursor: pointer;
             transition: transform 0.3s;
         }
@@ -141,20 +128,6 @@
             background: var(--bg-darker);
             border: 3px solid var(--glass-border);
             transition: all 0.4s;
-        }
-
-        .agent-avatar::before {
-            content: '';
-            position: absolute;
-            inset: -5px;
-            border-radius: 50%;
-            padding: 5px;
-            background: linear-gradient(135deg, transparent, transparent);
-            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-            -webkit-mask-composite: xor;
-            mask-composite: exclude;
-            opacity: 0;
-            transition: opacity 0.4s;
         }
 
         /* Pulse animations for each agent */
@@ -188,28 +161,17 @@
             50% { box-shadow: 0 0 60px var(--accent-pink), 0 0 120px var(--accent-pink); }
         }
 
-        .agent-name {
-            font-weight: 600;
-            font-size: 16px;
-            color: var(--text-primary);
-        }
-
-        .agent-role {
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        /* Tooltip */
+        /* Enhanced Tooltip - Shows all info on hover */
         .agent-tooltip {
             position: absolute;
-            bottom: -80px;
+            bottom: -120px;
             left: 50%;
             transform: translateX(-50%);
             background: var(--bg-darker);
-            padding: 15px 20px;
+            padding: 20px;
             border-radius: 12px;
             border: 1px solid var(--glass-border);
-            min-width: 250px;
+            min-width: 280px;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s;
@@ -221,15 +183,27 @@
             opacity: 1;
         }
 
-        .agent-tooltip h4 {
+        .agent-tooltip .tooltip-name {
+            font-size: 18px;
+            font-weight: 700;
             margin-bottom: 8px;
-            color: var(--accent-blue);
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
-        .agent-tooltip p {
+        .agent-tooltip .tooltip-model {
+            font-size: 14px;
+            color: var(--accent-blue);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .agent-tooltip .tooltip-role {
             font-size: 13px;
             color: var(--text-secondary);
-            line-height: 1.5;
+            line-height: 1.6;
         }
 
         /* Glass Section */
@@ -292,7 +266,37 @@
             color: var(--text-secondary);
         }
 
-        /* Textarea */
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        select {
+            width: 100%;
+            padding: 15px;
+            background: var(--bg-darker);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+        }
+
         textarea {
             width: 100%;
             min-height: 200px;
@@ -352,15 +356,6 @@
         .btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
-        }
-
-        .btn-buy {
-            background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink));
-            box-shadow: 0 4px 15px rgba(181, 55, 242, 0.3);
-        }
-
-        .btn-buy:hover {
-            box-shadow: 0 8px 25px rgba(181, 55, 242, 0.5);
         }
 
         /* Terminal-style Log Console */
@@ -706,46 +701,38 @@
     <div class="navbar">
         <h1>🚀 AI Assignment Architect</h1>
         <div class="user-info">
-            <div class="credits-badge">
-                <span>💎</span>
-                <span id="creditCount">{{ user.credits }}</span>
-                <span>Credits</span>
-            </div>
             <span>{{ current_user.username }}</span>
             <a href="{{ url_for('logout') }}">Logout</a>
         </div>
     </div>
 
     <div class="container">
-        <!-- Agent Hub - Atoms Style -->
+        <!-- Agent Hub - Minimalist Atoms Style (Icons Only) -->
         <div class="agent-hub">
             <div class="agent" id="writerAgent">
                 <div class="agent-avatar">✍️</div>
-                <div class="agent-name">Writer</div>
-                <div class="agent-role">Claude 3.5 Sonnet</div>
                 <div class="agent-tooltip">
-                    <h4>Writer Agent</h4>
-                    <p>Creates and refines essay drafts using advanced language understanding. Specializes in academic writing, argumentation, and content structure.</p>
+                    <div class="tooltip-name">Writer Agent</div>
+                    <div class="tooltip-model">Claude 3.5 Sonnet</div>
+                    <div class="tooltip-role">Creates and refines essay drafts using advanced language understanding. Specializes in academic writing, argumentation, and content structure.</div>
                 </div>
             </div>
 
             <div class="agent" id="examinerAgent">
                 <div class="agent-avatar">🎯</div>
-                <div class="agent-name">Examiner</div>
-                <div class="agent-role">GPT-4o</div>
                 <div class="agent-tooltip">
-                    <h4>Examiner Agent</h4>
-                    <p>Evaluates essay quality with strict academic standards. Provides scores (0-100) and identifies areas for improvement.</p>
+                    <div class="tooltip-name">Examiner Agent</div>
+                    <div class="tooltip-model">GPT-4o</div>
+                    <div class="tooltip-role">Evaluates essay quality with strict academic standards. Provides scores (0-100) and identifies areas for improvement.</div>
                 </div>
             </div>
 
             <div class="agent" id="reviewerAgent">
                 <div class="agent-avatar">💬</div>
-                <div class="agent-name">Reviewer</div>
-                <div class="agent-role">Gemini 1.5 Pro</div>
                 <div class="agent-tooltip">
-                    <h4>Reviewer Agent</h4>
-                    <p>Provides detailed feedback and actionable suggestions. Focuses on content depth, style refinement, and structural improvements.</p>
+                    <div class="tooltip-name">Reviewer Agent</div>
+                    <div class="tooltip-model">Gemini 1.5 Pro</div>
+                    <div class="tooltip-role">Provides detailed feedback and actionable suggestions. Focuses on content depth, style refinement, and structural improvements.</div>
                 </div>
             </div>
         </div>
@@ -753,15 +740,6 @@
         <!-- Main Section -->
         <div class="glass-section">
             <h2 class="section-title">✨ Create New Essay</h2>
-            
-            {% if user.credits < 1 %}
-            <div style="text-align: center; padding: 40px;">
-                <p style="font-size: 18px; margin-bottom: 20px; color: var(--text-secondary);">
-                    You need credits to generate essays. Purchase now to get started!
-                </p>
-                <button class="btn btn-buy" id="buyCreditsBtn">Buy 1 Credit - £20</button>
-            </div>
-            {% else %}
             
             <!-- Drag & Drop Upload Zone -->
             <div class="upload-zone" id="uploadZone">
@@ -772,10 +750,20 @@
             </div>
 
             <form id="essayForm">
-                <textarea id="instructions" name="instructions" placeholder="Or paste your essay instructions here... Be specific about topic, word count, style, and requirements."></textarea>
-                <div style="margin-top: 20px;">
-                    <button type="submit" class="btn" id="generateBtn">Generate Essay</button>
+                <div class="form-group">
+                    <label for="wordCount">Target Word Count</label>
+                    <select id="wordCount" name="word_count" required>
+                        <option value="2000">Standard (Up to 2,000 words) - £20</option>
+                        <option value="4000">Extended (Up to 4,000 words) - £40</option>
+                    </select>
                 </div>
+
+                <div class="form-group">
+                    <label for="instructions">Essay Instructions</label>
+                    <textarea id="instructions" name="instructions" placeholder="Paste your essay instructions here... Be specific about topic, requirements, and style." required></textarea>
+                </div>
+
+                <button type="submit" class="btn" id="generateBtn">Pay & Generate Essay</button>
             </form>
 
             <div class="progress-bar" id="progressBar">
@@ -798,7 +786,6 @@
                 </div>
                 <button class="btn" id="downloadBtn">Download Word Document</button>
             </div>
-            {% endif %}
         </div>
 
         <!-- History Section -->
@@ -816,8 +803,8 @@
                             </span>
                         </div>
                         <div class="meta">
+                            <span>{{ essay.word_count_limit }} words</span>
                             <span>Rounds: {{ essay.rounds_used }}</span>
-                            <span>{{ essay.stop_reason.split(':')[0] }}</span>
                         </div>
                         <div class="actions">
                             <button class="btn btn-small" onclick="viewEssay({{ essay.id }})">View</button>
@@ -845,51 +832,44 @@
 
     <script>
         // Stripe
-        const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_...") }}');
+        const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
         let currentEssayId = null;
+        let pendingGeneration = null;
 
-        // Buy Credits
-        document.getElementById('buyCreditsBtn')?.addEventListener('click', async () => {
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                });
-                const session = await response.json();
+        // Check if we should start generation after payment
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('start_generation') === 'true') {
+            const pendingEssay = sessionStorage.getItem('pending_essay');
+            if (pendingEssay) {
+                const data = JSON.parse(pendingEssay);
+                document.getElementById('instructions').value = data.instructions;
+                document.getElementById('wordCount').value = data.word_count;
+                sessionStorage.removeItem('pending_essay');
                 
-                if (session.error) {
-                    alert('Error: ' + session.error);
-                    return;
-                }
-                
-                const result = await stripe.redirectToCheckout({
-                    sessionId: session.id
-                });
-                
-                if (result.error) {
-                    alert(result.error.message);
-                }
-            } catch (error) {
-                alert('Payment error: ' + error.message);
+                // Auto-start generation
+                setTimeout(() => {
+                    startGeneration(data.instructions, data.word_count);
+                }, 500);
             }
-        });
+        }
 
         // File Upload
         const uploadZone = document.getElementById('uploadZone');
         const fileInput = document.getElementById('fileInput');
         const instructionsTextarea = document.getElementById('instructions');
 
-        uploadZone?.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('click', () => fileInput.click());
 
-        uploadZone?.addEventListener('dragover', (e) => {
+        uploadZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadZone.classList.add('dragover');
         });
 
-        uploadZone?.addEventListener('dragleave', () => {
+        uploadZone.addEventListener('dragleave', () => {
             uploadZone.classList.remove('dragover');
         });
 
-        uploadZone?.addEventListener('drop', async (e) => {
+        uploadZone.addEventListener('drop', async (e) => {
             e.preventDefault();
             uploadZone.classList.remove('dragover');
             
@@ -899,7 +879,7 @@
             }
         });
 
-        fileInput?.addEventListener('change', async (e) => {
+        fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 await handleFileUpload(file);
@@ -942,12 +922,10 @@
 
         // Agent pulse control
         function activateAgent(agentName) {
-            // Remove all active classes
             document.querySelectorAll('.agent-avatar').forEach(avatar => {
                 avatar.classList.remove('active-writer', 'active-examiner', 'active-reviewer');
             });
             
-            // Add active class to specific agent
             const agentMap = {
                 'writer': 'writerAgent',
                 'examiner': 'examinerAgent',
@@ -985,18 +963,65 @@
             });
         }
 
-        // Essay Generation
-        document.getElementById('essayForm')?.addEventListener('submit', async (e) => {
+        // Essay Form Submission - Redirect to Stripe
+        document.getElementById('essayForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const instructions = instructionsTextarea.value;
+            const instructions = document.getElementById('instructions').value;
+            const wordCount = document.getElementById('wordCount').value;
+            
+            if (!instructions.trim()) {
+                alert('Please enter essay instructions');
+                return;
+            }
+
+            // Store for post-payment
+            sessionStorage.setItem('pending_essay', JSON.stringify({
+                instructions: instructions,
+                word_count: wordCount
+            }));
+
+            // Create Stripe session and redirect
+            try {
+                const response = await fetch('/create-checkout-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        word_count: wordCount,
+                        instructions: instructions
+                    })
+                });
+                
+                const session = await response.json();
+                
+                if (session.error) {
+                    alert('Payment Error: ' + session.error);
+                    return;
+                }
+                
+                // Redirect to Stripe Checkout
+                const result = await stripe.redirectToCheckout({
+                    sessionId: session.id
+                });
+                
+                if (result.error) {
+                    alert(result.error.message);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        // Start Generation (called after payment success)
+        async function startGeneration(instructions, wordCount) {
             const generateBtn = document.getElementById('generateBtn');
             const logConsole = document.getElementById('logConsole');
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
             const resultSection = document.getElementById('resultSection');
             
-            // Reset UI
             generateBtn.disabled = true;
             generateBtn.textContent = 'Generating...';
             logConsole.innerHTML = '';
@@ -1005,9 +1030,9 @@
             progressFill.style.width = '0%';
             resultSection.classList.remove('active');
             
-            // Create EventSource for SSE
             const formData = new FormData();
             formData.append('instructions', instructions);
+            formData.append('word_count', wordCount);
             
             const response = await fetch('/generate', {
                 method: 'POST',
@@ -1036,7 +1061,6 @@
                             const logEntry = document.createElement('div');
                             logEntry.className = `log-entry ${data.agent || ''}`;
                             
-                            // Activate corresponding agent
                             if (data.agent && data.agent !== 'system') {
                                 activateAgent(data.agent);
                             }
@@ -1063,7 +1087,6 @@
                             resultSection.classList.add('active');
                             progressFill.style.width = '100%';
                             
-                            // Confetti explosion for high scores
                             if (data.score >= 90) {
                                 confetti({
                                     particleCount: 200,
@@ -1073,11 +1096,6 @@
                                 });
                             }
                             
-                            // Update credit count
-                            const creditCount = document.getElementById('creditCount');
-                            creditCount.textContent = parseInt(creditCount.textContent) - 1;
-                            
-                            // Reload after delay
                             setTimeout(() => {
                                 location.reload();
                             }, 3000);
@@ -1094,10 +1112,10 @@
             }
             
             generateBtn.disabled = false;
-            generateBtn.textContent = 'Generate Essay';
-        });
+            generateBtn.textContent = 'Pay & Generate Essay';
+        }
         
-        document.getElementById('downloadBtn')?.addEventListener('click', () => {
+        document.getElementById('downloadBtn').addEventListener('click', () => {
             if (currentEssayId) {
                 window.location.href = `/download/${currentEssayId}`;
             }
@@ -1113,6 +1131,7 @@
                     <strong>Created:</strong> ${data.created_at}<br>
                     <strong>Score:</strong> ${data.score}/100<br>
                     <strong>Rounds:</strong> ${data.rounds}<br>
+                    <strong>Word Count Limit:</strong> ${data.word_count_limit}<br>
                     <strong>Stop Reason:</strong> ${data.stop_reason}
                 </div>
                 <h3>Instructions:</h3>

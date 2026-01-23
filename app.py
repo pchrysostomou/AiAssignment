@@ -39,8 +39,15 @@ login_manager.init_app(app)
 login_manager.login_view = 'login'
 
 # Stripe configuration
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
-STRIPE_PRICE_ID = os.getenv('STRIPE_PRICE_ID', 'price_1234567890')  # Your Stripe Price ID
+stripe_key = os.getenv('STRIPE_SECRET_KEY', '')
+if stripe_key:
+    stripe.api_key = stripe_key
+    # Debug print with masked key
+    masked_key = stripe_key[:7] + '...' + stripe_key[-4:] if len(stripe_key) > 11 else '***'
+    print(f"✅ Stripe Key Loaded: {masked_key}")
+else:
+    print("⚠️ WARNING: STRIPE_SECRET_KEY not found in .env")
+
 DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
 
 # Configuration
@@ -49,6 +56,12 @@ SUCCESS_THRESHOLD = int(os.getenv('SUCCESS_THRESHOLD', 90))
 STAGNATION_THRESHOLD = float(os.getenv('STAGNATION_THRESHOLD', 1.5))
 HISTORY_PRUNING_START = int(os.getenv('HISTORY_PRUNING_START', 4))
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
+
+# Pricing tiers
+PRICING_TIERS = {
+    '2000': {'price': 2000, 'display': '£20', 'words': 2000},  # Price in cents
+    '4000': {'price': 4000, 'display': '£40', 'words': 4000}
+}
 
 # Initialize AI clients
 anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
@@ -61,7 +74,6 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
-    credits = db.Column(db.Integer, default=0)  # Track user credits
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     essays = db.relationship('Essay', backref='author', lazy=True)
 
@@ -80,6 +92,7 @@ class Essay(db.Model):
     final_score = db.Column(db.Integer, nullable=False)
     rounds_used = db.Column(db.Integer, nullable=False)
     stop_reason = db.Column(db.String(100), nullable=False)
+    word_count_limit = db.Column(db.Integer, default=2000)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
@@ -196,9 +209,9 @@ PREVIOUS ROUND FEEDBACK:
         return pruned_context
 
 # Main AI Loop Generator (SSE)
-def generate_essay_stream(instructions):
+def generate_essay_stream(instructions, word_count_limit):
     """Main AI loop with streaming logs"""
-    yield f"data: {json.dumps({'type': 'log', 'message': '🚀 Initializing AI Assignment Architect...', 'agent': 'system'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🚀 Initializing AI Assignment Architect (Target: {word_count_limit} words)...', 'agent': 'system'})}\n\n"
     
     # Step A: Initial Draft by Claude
     yield f"data: {json.dumps({'type': 'log', 'message': '📝 Writer Agent activating...', 'agent': 'writer'})}\n\n"
@@ -207,7 +220,7 @@ def generate_essay_stream(instructions):
 
 {instructions}
 
-Write a comprehensive, well-structured essay that fully addresses all requirements. Use proper academic language, clear arguments, and supporting evidence."""
+IMPORTANT: Target word count is approximately {word_count_limit} words. Write a comprehensive, well-structured essay that fully addresses all requirements. Use proper academic language, clear arguments, and supporting evidence."""
 
     try:
         current_draft = call_claude_writer(writer_prompt)
@@ -288,6 +301,7 @@ Current Essay:
 {current_draft}
 
 Current Score: {score}/100
+Target Word Count: {word_count_limit} words
 
 Provide detailed critique focusing on:
 1. Content gaps or weaknesses
@@ -319,7 +333,7 @@ Provide detailed critique focusing on:
         
         refine_prompt = f"""{context}
 
-Based on the feedback above, rewrite and improve the essay. Address all critiques and aim for a score above {SUCCESS_THRESHOLD}."""
+Based on the feedback above, rewrite and improve the essay. Address all critiques and aim for a score above {SUCCESS_THRESHOLD}. Maintain approximately {word_count_limit} words."""
 
         try:
             current_draft = call_claude_writer(refine_prompt)
@@ -345,7 +359,8 @@ Based on the feedback above, rewrite and improve the essay. Address all critique
             final_content=best_draft,
             final_score=best_score,
             rounds_used=len(scores),
-            stop_reason=stop_reason
+            stop_reason=stop_reason,
+            word_count_limit=word_count_limit
         )
         db.session.add(essay)
         db.session.commit()
@@ -399,7 +414,7 @@ def register():
             flash('Email already registered', 'error')
             return redirect(url_for('register'))
         
-        user = User(username=username, email=email, credits=0)
+        user = User(username=username, email=email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
@@ -453,75 +468,91 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/generate', methods=['POST'])
-@login_required
-def generate():
-    """Generate essay with credit check"""
-    # Check if user has credits
-    if current_user.credits < 1:
-        return jsonify({'error': 'Insufficient credits. Please purchase credits to continue.'}), 403
-    
-    instructions = request.form.get('instructions')
-    if not instructions:
-        return jsonify({'error': 'Instructions required'}), 400
-    
-    # Deduct credit
-    current_user.credits -= 1
-    db.session.commit()
-    
-    return Response(
-        stream_with_context(generate_essay_stream(instructions)),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no'
-        }
-    )
-
 @app.route('/create-checkout-session', methods=['POST'])
 @login_required
 def create_checkout_session():
-    """Create Stripe checkout session"""
+    """Create Stripe checkout session with dynamic pricing"""
     try:
+        data = request.get_json()
+        word_count = data.get('word_count', '2000')
+        instructions = data.get('instructions', '')
+        
+        if word_count not in PRICING_TIERS:
+            return jsonify({'error': 'Invalid word count tier'}), 400
+        
+        tier = PRICING_TIERS[word_count]
+        
+        # Store in session for post-payment processing
+        session['pending_essay'] = {
+            'instructions': instructions,
+            'word_count': tier['words']
+        }
+        
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
-                'price': STRIPE_PRICE_ID,
+                'price_data': {
+                    'currency': 'gbp',
+                    'unit_amount': tier['price'],
+                    'product_data': {
+                        'name': f'AI Essay Generation ({tier["words"]} words)',
+                        'description': f'Professional AI-powered essay up to {tier["words"]} words',
+                    },
+                },
                 'quantity': 1,
             }],
             mode='payment',
-            allow_promotion_codes=True,  # Enable promo codes for testing
+            allow_promotion_codes=True,
             success_url=DOMAIN + '/payment-success?session_id={CHECKOUT_SESSION_ID}',
             cancel_url=DOMAIN + '/dashboard',
             client_reference_id=str(current_user.id),
             customer_email=current_user.email,
         )
+        
         return jsonify({'id': checkout_session.id})
     except Exception as e:
+        print(f"❌ Stripe Error: {str(e)}")
         return jsonify({'error': str(e)}), 403
 
 @app.route('/payment-success')
 @login_required
 def payment_success():
-    """Handle successful payment"""
+    """Handle successful payment and start generation"""
     session_id = request.args.get('session_id')
     
     if session_id:
         try:
-            # Verify the session
             checkout_session = stripe.checkout.Session.retrieve(session_id)
             
             if checkout_session.payment_status == 'paid':
-                # Add credit to user
-                current_user.credits += 1
-                db.session.commit()
-                flash('Payment successful! 1 credit added to your account.', 'success')
+                flash('Payment successful! Starting essay generation...', 'success')
+                # Redirect to generation page
+                return redirect(url_for('dashboard') + '?start_generation=true')
             else:
                 flash('Payment verification failed.', 'error')
         except Exception as e:
             flash(f'Error verifying payment: {str(e)}', 'error')
     
     return redirect(url_for('dashboard'))
+
+@app.route('/generate', methods=['POST'])
+@login_required
+def generate():
+    """Generate essay after payment"""
+    instructions = request.form.get('instructions')
+    word_count = int(request.form.get('word_count', 2000))
+    
+    if not instructions:
+        return jsonify({'error': 'Instructions required'}), 400
+    
+    return Response(
+        stream_with_context(generate_essay_stream(instructions, word_count)),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 @app.route('/download/<int:essay_id>')
 @login_required
@@ -543,6 +574,7 @@ def download(essay_id):
     doc.add_paragraph(f"Generated: {essay.created_at.strftime('%Y-%m-%d %H:%M')}")
     doc.add_paragraph(f"Final Score: {essay.final_score}/100")
     doc.add_paragraph(f"Rounds Used: {essay.rounds_used}")
+    doc.add_paragraph(f"Word Count Limit: {essay.word_count_limit}")
     doc.add_paragraph(f"Stop Reason: {essay.stop_reason}")
     doc.add_paragraph("")
     
@@ -583,6 +615,7 @@ def view_essay(essay_id):
         'content': essay.final_content,
         'score': essay.final_score,
         'rounds': essay.rounds_used,
+        'word_count_limit': essay.word_count_limit,
         'stop_reason': essay.stop_reason,
         'created_at': essay.created_at.strftime('%Y-%m-%d %H:%M')
     })
@@ -591,9 +624,9 @@ def view_essay(essay_id):
 with app.app_context():
     db.create_all()
     
-    # Create demo user with 1 free credit
+    # Create demo user (no free credits)
     if not User.query.filter_by(username='demo').first():
-        demo_user = User(username='demo', email='demo@example.com', credits=1)
+        demo_user = User(username='demo', email='demo@example.com')
         demo_user.set_password('demo123')
         db.session.add(demo_user)
         db.session.commit()
