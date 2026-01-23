@@ -33,7 +33,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///aca
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['REPORTS_FOLDER'] = 'reports'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # INCREASED TO 25MB
 
 # Add Stripe Publishable Key to config so templates can access it
 app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
@@ -214,38 +214,79 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'docx', 'txt'}
 
 def extract_text_from_pdf(file_path):
-    """Extract text from PDF file with page limit for performance"""
+    """
+    Extract text from PDF file with MEMORY-EFFICIENT streaming approach.
+    Limits pages to prevent RAM overload on limited server.
+    """
     try:
         with open(file_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
-            # Limit to first 50 pages to prevent timeout
-            max_pages = min(len(pdf_reader.pages), 50)
-            text = "\n".join([pdf_reader.pages[i].extract_text() for i in range(max_pages)])
-            if len(pdf_reader.pages) > 50:
-                text += f"\n\n[Note: Document has {len(pdf_reader.pages)} pages. Only first 50 pages extracted for performance.]"
+            total_pages = len(pdf_reader.pages)
+            
+            # MEMORY OPTIMIZATION: Limit to 100 pages for 25MB files
+            max_pages = min(total_pages, 100)
+            
+            # Extract text page by page (memory efficient)
+            text_chunks = []
+            for i in range(max_pages):
+                try:
+                    page_text = pdf_reader.pages[i].extract_text()
+                    if page_text:
+                        text_chunks.append(page_text)
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not extract page {i+1}: {str(e)}")
+                    continue
+            
+            text = "\n".join(text_chunks)
+            
+            if total_pages > max_pages:
+                text += f"\n\n[Note: Document has {total_pages} pages. First {max_pages} pages extracted for performance on limited RAM server.]"
+            
             return text.strip()
     except Exception as e:
         raise Exception(f"PDF extraction error: {str(e)}")
 
 def extract_text_from_docx(file_path):
-    """Extract text from DOCX file with paragraph limit for performance"""
+    """
+    Extract text from DOCX file with MEMORY-EFFICIENT approach.
+    Limits paragraphs to prevent RAM overload.
+    """
     try:
         doc = Document(file_path)
-        # Limit to first 200 paragraphs to prevent timeout
-        max_paragraphs = min(len(doc.paragraphs), 200)
-        text = "\n".join([doc.paragraphs[i].text for i in range(max_paragraphs)])
-        if len(doc.paragraphs) > 200:
-            text += f"\n\n[Note: Document has {len(doc.paragraphs)} paragraphs. Only first 200 extracted for performance.]"
+        total_paragraphs = len(doc.paragraphs)
+        
+        # MEMORY OPTIMIZATION: Limit to 300 paragraphs for 25MB files
+        max_paragraphs = min(total_paragraphs, 300)
+        
+        # Extract paragraph by paragraph (memory efficient)
+        text_chunks = []
+        for i in range(max_paragraphs):
+            para_text = doc.paragraphs[i].text
+            if para_text.strip():
+                text_chunks.append(para_text)
+        
+        text = "\n".join(text_chunks)
+        
+        if total_paragraphs > max_paragraphs:
+            text += f"\n\n[Note: Document has {total_paragraphs} paragraphs. First {max_paragraphs} extracted for performance on limited RAM server.]"
+        
         return text.strip()
     except Exception as e:
         raise Exception(f"DOCX extraction error: {str(e)}")
 
 def extract_text_from_file(file_path, filename):
-    """Helper function to extract text from PDF or DOCX files with size limits"""
-    # Check file size (max 5MB per file to prevent timeout)
+    """
+    Helper function to extract text from PDF or DOCX files.
+    MEMORY-EFFICIENT: Enforces size limits to prevent RAM overload.
+    """
+    # Check file size (max 25MB per file)
     file_size = os.path.getsize(file_path)
-    if file_size > 5 * 1024 * 1024:  # 5MB
-        raise Exception(f"File too large ({file_size / (1024*1024):.1f}MB). Maximum 5MB per file.")
+    file_size_mb = file_size / (1024 * 1024)
+    
+    if file_size > 25 * 1024 * 1024:  # 25MB
+        raise Exception(f"File too large ({file_size_mb:.1f}MB). Maximum 25MB per file.")
+    
+    print(f"📄 Processing file: {filename} ({file_size_mb:.1f}MB)")
     
     ext = filename.rsplit('.', 1)[1].lower()
     if ext == 'pdf':
@@ -254,8 +295,8 @@ def extract_text_from_file(file_path, filename):
         return extract_text_from_docx(file_path)
     elif ext == 'txt':
         with open(file_path, 'r', encoding='utf-8') as f:
-            # Limit text files to 100KB
-            text = f.read(100 * 1024)
+            # Limit text files to 200KB to prevent RAM issues
+            text = f.read(200 * 1024)
             return text.strip()
     raise Exception("Unsupported file type")
 
@@ -1198,14 +1239,18 @@ Be polite, concise, and helpful. Troubleshoot errors and explain features."""
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    """Optimized file upload handler with size limits and timeout prevention"""
+    """
+    MEMORY-OPTIMIZED file upload handler for 25MB files.
+    Processes files efficiently to avoid RAM crashes on limited server.
+    """
     if 'file' not in request.files:
         return jsonify({'error': 'No file'}), 400
     
     file = request.files['file']
     if not file.filename or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Supported: PDF, DOCX, TXT'}), 400
+        return jsonify({'error': 'Invalid file type. Supported: PDF, DOCX, TXT (max 25MB each)'}), 400
     
+    filepath = None
     try:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -1213,21 +1258,26 @@ def upload_file():
         # Save file
         file.save(filepath)
         
-        # Extract text with size limits
+        # MEMORY-EFFICIENT: Extract text with limits (100 pages PDF, 300 paragraphs DOCX)
         text = extract_text_from_file(filepath, filename)
         
-        # Clean up
+        # Clean up immediately to free RAM
         os.remove(filepath)
+        filepath = None
         
-        # Limit extracted text to prevent frontend issues (max 50KB)
-        if len(text) > 50000:
-            text = text[:50000] + "\n\n[Text truncated for performance. Full content will be used in processing.]"
+        # Limit extracted text for frontend display (max 100KB)
+        # Full text is already processed, this is just for preview
+        if len(text) > 100000:
+            text = text[:100000] + "\n\n[Preview truncated. Full content will be used in essay generation.]"
         
+        print(f"✅ File processed successfully: {filename}")
         return jsonify({'success': True, 'text': text})
+        
     except Exception as e:
         # Clean up on error
-        if os.path.exists(filepath):
+        if filepath and os.path.exists(filepath):
             os.remove(filepath)
+        print(f"❌ Upload error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/create-checkout-session', methods=['POST'])

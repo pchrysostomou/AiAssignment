@@ -377,7 +377,7 @@
             <div class="upload-zone" id="contextZone">
                 <div class="upload-icon">📋</div>
                 <div class="upload-text">Upload Assignment Briefs or Context Files</div>
-                <div class="upload-subtext">PDF or DOCX (Multiple files supported)</div>
+                <div class="upload-subtext">PDF or DOCX (Max 25MB per file, multiple files supported)</div>
                 <input type="file" id="contextInput" accept=".pdf,.docx" multiple style="display: none;">
             </div>
             <div class="file-list" id="contextFileList"></div>
@@ -440,6 +440,9 @@
     let currentEssayId = null;
     let contextFiles = [];
 
+    // UPDATED: 25MB file size validation
+    const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB in bytes
+
     // Context files upload
     document.getElementById('contextZone').addEventListener('click', () => {
         document.getElementById('contextInput').click();
@@ -447,11 +450,20 @@
 
     document.getElementById('contextInput').addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
+        
+        // Validate file sizes BEFORE uploading
         for (const file of files) {
+            if (file.size > MAX_FILE_SIZE) {
+                alert(`File "${file.name}" is too large (${(file.size / (1024*1024)).toFixed(1)}MB). Maximum 25MB per file.`);
+                continue;
+            }
+            
             const formData = new FormData();
             formData.append('file', file);
 
             try {
+                console.log(`📤 Uploading file: ${file.name} (${(file.size / (1024*1024)).toFixed(1)}MB)`);
+                
                 const response = await fetch('/upload', {
                     method: 'POST',
                     body: formData
@@ -461,11 +473,14 @@
                 if (data.success) {
                     contextFiles.push({name: file.name, text: data.text});
                     addFileChip(file.name, 'contextFileList');
+                    console.log(`✅ File uploaded successfully: ${file.name}`);
                 } else {
                     alert('Error: ' + data.error);
+                    console.error(`❌ Upload failed: ${data.error}`);
                 }
             } catch (error) {
                 alert('Upload error: ' + error.message);
+                console.error(`❌ Upload error: ${error.message}`);
             }
         }
     });
