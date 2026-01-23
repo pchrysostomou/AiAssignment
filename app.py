@@ -38,6 +38,14 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 # FIX: Add Stripe Publishable Key to config so templates can access it
 app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 
+# FIX: Remove CSP headers that block Stripe.js
+@app.after_request
+def remove_csp_headers(response):
+    """Remove Content-Security-Policy headers that might block Stripe.js"""
+    response.headers.pop('Content-Security-Policy', None)
+    response.headers.pop('X-Content-Security-Policy', None)
+    return response
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
 
@@ -1074,6 +1082,8 @@ def create_checkout_session():
         data = request.get_json()
         tool_type = data.get('tool_type')
         
+        print(f"🔔 Checkout session requested for tool: {tool_type}")  # Debug log
+        
         if tool_type not in PRICING:
             return jsonify({'error': 'Invalid tool'}), 400
         
@@ -1083,6 +1093,7 @@ def create_checkout_session():
             word_count = data.get('word_count', 2000)
             amount = int((word_count / 1000) * PRICING['writer']['price_per_1k'])
             product_name = f'Essay Writing ({word_count:,} words)'
+            print(f"💰 Writer pricing: {word_count} words = £{amount/100}")  # Debug log
         else:
             # Fixed pricing for other tools
             amount = PRICING[tool_type]['price']
@@ -1114,8 +1125,10 @@ def create_checkout_session():
             customer_email=current_user.email,
         )
         
+        print(f"✅ Stripe session created: {checkout_session.id}")  # Debug log
         return jsonify({'id': checkout_session.id})
     except Exception as e:
+        print(f"❌ Checkout error: {str(e)}")  # Debug log
         return jsonify({'error': str(e)}), 403
 
 @app.route('/payment-success')

@@ -416,7 +416,27 @@
 </div>
 
 <script>
-    const stripe = Stripe('{{ config["STRIPE_PUBLISHABLE_KEY"] }}');
+    // DEBUG: Log Stripe initialization
+    console.log('🔍 DEBUG: Checking Stripe initialization...');
+    console.log('🔍 DEBUG: Stripe object:', typeof Stripe !== 'undefined' ? 'LOADED ✅' : 'NOT LOADED ❌');
+    console.log('🔍 DEBUG: Stripe Publishable Key:', '{{ config["STRIPE_PUBLISHABLE_KEY"] }}');
+    
+    // Initialize Stripe with error handling
+    let stripe = null;
+    try {
+        const stripeKey = '{{ config["STRIPE_PUBLISHABLE_KEY"] }}';
+        if (!stripeKey || stripeKey === '') {
+            console.error('❌ ERROR: STRIPE_PUBLISHABLE_KEY is empty or undefined');
+            alert('Configuration Error: Stripe key not found. Please contact support.');
+        } else {
+            stripe = Stripe(stripeKey);
+            console.log('✅ SUCCESS: Stripe initialized with key:', stripeKey.substring(0, 10) + '...');
+        }
+    } catch (error) {
+        console.error('❌ ERROR: Failed to initialize Stripe:', error);
+        alert('Stripe Initialization Error: ' + error.message);
+    }
+    
     let currentEssayId = null;
     let contextFiles = [];
 
@@ -482,14 +502,26 @@
         priceValue.textContent = '£' + price;
     });
 
+    // Form submission with enhanced debugging
     document.getElementById('writerForm').addEventListener('submit', async (e) => {
         e.preventDefault();
+        console.log('🔍 DEBUG: Form submitted!');
 
         const wordCount = parseInt(slider.value);
         const instructions = document.getElementById('instructions').value;
 
+        console.log('🔍 DEBUG: Word Count:', wordCount);
+        console.log('🔍 DEBUG: Instructions:', instructions.substring(0, 50) + '...');
+
         if (!instructions.trim()) {
             alert('Please enter essay instructions');
+            return;
+        }
+
+        // Check if Stripe is initialized
+        if (!stripe) {
+            console.error('❌ ERROR: Stripe not initialized');
+            alert('Payment system not ready. Please refresh the page and try again.');
             return;
         }
 
@@ -509,6 +541,8 @@
         generateBtn.disabled = true;
         generateBtn.textContent = 'Processing Payment...';
 
+        console.log('🔍 DEBUG: Sending request to /create-checkout-session...');
+
         try {
             const response = await fetch('/create-checkout-session', {
                 method: 'POST',
@@ -520,17 +554,39 @@
                 })
             });
 
+            console.log('🔍 DEBUG: Response status:', response.status);
+            
             const session = await response.json();
+            console.log('🔍 DEBUG: Session response:', session);
 
             if (session.error) {
+                console.error('❌ ERROR: Session error:', session.error);
                 alert('Error: ' + session.error);
                 generateBtn.disabled = false;
                 generateBtn.textContent = 'Pay & Generate Essay';
                 return;
             }
 
-            await stripe.redirectToCheckout({sessionId: session.id});
+            if (!session.id) {
+                console.error('❌ ERROR: No session ID returned');
+                alert('Error: Invalid payment session. Please try again.');
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Pay & Generate Essay';
+                return;
+            }
+
+            console.log('✅ SUCCESS: Redirecting to Stripe Checkout with session ID:', session.id);
+            
+            const result = await stripe.redirectToCheckout({sessionId: session.id});
+            
+            if (result.error) {
+                console.error('❌ ERROR: Stripe redirect error:', result.error);
+                alert('Stripe Error: ' + result.error.message);
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Pay & Generate Essay';
+            }
         } catch (error) {
+            console.error('❌ ERROR: Fetch error:', error);
             alert('Error: ' + error.message);
             generateBtn.disabled = false;
             generateBtn.textContent = 'Pay & Generate Essay';
