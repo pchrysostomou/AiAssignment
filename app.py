@@ -328,10 +328,12 @@ def call_claude(prompt, max_tokens=4000):
         except Exception as e:
             print(f"⚠️ claude-3-5-sonnet-20241022 failed: {str(e)}")
             # EMERGENCY FALLBACK: claude-3-haiku-20240307 (guaranteed high limits for Tier 1)
-            print(f"🤖 EMERGENCY FALLBACK: Attempting claude-3-haiku-20240307")
+            # CRITICAL: Haiku has a hard limit of 4096 max_tokens
+            haiku_max_tokens = min(max_tokens, 4096)
+            print(f"🤖 EMERGENCY FALLBACK: Attempting claude-3-haiku-20240307 (max_tokens capped at {haiku_max_tokens})")
             response = anthropic_client.messages.create(
                 model="claude-3-haiku-20240307",
-                max_tokens=max_tokens,
+                max_tokens=haiku_max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
             print(f"✅ Claude API call successful with EMERGENCY FALLBACK model: claude-3-haiku-20240307")
