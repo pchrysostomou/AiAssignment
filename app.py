@@ -61,7 +61,8 @@ if stripe_pub_key:
 else:
     print("⚠️ WARNING: STRIPE_PUBLISHABLE_KEY not found in environment variables")
 
-DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
+# FIX: Hardcode production domain for Stripe redirects
+DOMAIN = os.getenv('DOMAIN', 'https://aiassignment-x631.onrender.com')
 
 # Updated pricing structure
 PRICING = {
@@ -71,9 +72,35 @@ PRICING = {
     'grader': {'price': 1000, 'display': '£10'}  # Updated to £10
 }
 
-anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
-openai.api_key = os.getenv('OPENAI_API_KEY')
-genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+# API Credentials Initialization with Validation
+anthropic_api_key = os.getenv('ANTHROPIC_API_KEY', '')
+if anthropic_api_key:
+    anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+    print(f"✅ Anthropic API Key Loaded (ending: ...{anthropic_api_key[-4:]})")
+else:
+    anthropic_client = None
+    print("⚠️ WARNING: ANTHROPIC_API_KEY not found in environment variables")
+
+openai_api_key = os.getenv('OPENAI_API_KEY', '')
+if openai_api_key:
+    openai.api_key = openai_api_key
+    print(f"✅ OpenAI API Key Loaded (ending: ...{openai_api_key[-4:]})")
+else:
+    print("⚠️ WARNING: OPENAI_API_KEY not found in environment variables")
+
+google_api_key = os.getenv('GOOGLE_API_KEY', '')
+if google_api_key:
+    genai.configure(api_key=google_api_key)
+    print(f"✅ Google API Key Loaded (ending: ...{google_api_key[-4:]})")
+else:
+    print("⚠️ WARNING: GOOGLE_API_KEY not found in environment variables")
+
+# Google Custom Search Engine Configuration
+GOOGLE_CSE_ID = os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772')
+if GOOGLE_CSE_ID:
+    print(f"✅ Google CSE ID Configured: {GOOGLE_CSE_ID}")
+else:
+    print("⚠️ WARNING: GOOGLE_CSE_ID not found in environment variables")
 
 # MOCK EMAIL FUNCTION (For localhost development)
 def send_email_mock(user_email, subject, body):
@@ -166,6 +193,45 @@ def parse_uploaded_file(file_path, filename):
     """Parse uploaded file and extract text"""
     return extract_text_from_file(file_path, filename)
 
+# Google Custom Search Integration
+def google_search(query, num_results=5):
+    """
+    Perform Google Custom Search using the configured API key and CSE ID.
+    Returns a list of search results with titles, links, and snippets.
+    """
+    if not google_api_key or not GOOGLE_CSE_ID:
+        print("⚠️ Google Search unavailable: Missing API key or CSE ID")
+        return []
+    
+    try:
+        url = "https://www.googleapis.com/customsearch/v1"
+        params = {
+            'key': google_api_key,
+            'cx': GOOGLE_CSE_ID,
+            'q': query,
+            'num': num_results
+        }
+        
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        
+        data = response.json()
+        results = []
+        
+        for item in data.get('items', []):
+            results.append({
+                'title': item.get('title', ''),
+                'link': item.get('link', ''),
+                'snippet': item.get('snippet', '')
+            })
+        
+        print(f"✅ Google Search completed: {len(results)} results for '{query}'")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Google Search error: {str(e)}")
+        return []
+
 # AI Helper Functions
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
@@ -177,6 +243,9 @@ def call_with_retry(func, max_retries=3):
             time.sleep(2 * (attempt + 1))
 
 def call_claude(prompt, max_tokens=4000):
+    if not anthropic_client:
+        raise Exception("Anthropic API key not configured")
+    
     def api_call():
         response = anthropic_client.messages.create(
             model="claude-3-5-sonnet-20241022",
@@ -187,6 +256,9 @@ def call_claude(prompt, max_tokens=4000):
     return call_with_retry(api_call)
 
 def call_gpt4(prompt, model="gpt-4o"):
+    if not openai_api_key:
+        raise Exception("OpenAI API key not configured")
+    
     def api_call():
         response = openai.chat.completions.create(
             model=model,
@@ -197,6 +269,9 @@ def call_gpt4(prompt, model="gpt-4o"):
     return call_with_retry(api_call)
 
 def call_gemini(prompt):
+    if not google_api_key:
+        raise Exception("Google API key not configured")
+    
     def api_call():
         model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(prompt)
@@ -371,14 +446,33 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - Essay Writer with SPARTAN ACADEMIC Protocol
+# TOOL B: The Architect - Essay Writer with SPARTAN ACADEMIC Protocol + Google Search
 def generate_essay_stream(instructions, word_count):
     yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening ({word_count} words)...'})}\n\n"
     
     # Calculate buffer (15% extra)
     max_word_count = int(word_count * 1.15)
     
-    # Initial draft
+    # NEW: Research Phase - Use Google Custom Search for topic research
+    yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
+    
+    research_context = ""
+    try:
+        # Extract key topics from instructions for targeted search
+        search_query = instructions[:200]  # Use first 200 chars as search query
+        search_results = google_search(search_query, num_results=5)
+        
+        if search_results:
+            research_context = "\n\nRESEARCH CONTEXT (from web search):\n"
+            for idx, result in enumerate(search_results, 1):
+                research_context += f"{idx}. {result['title']}\n   Source: {result['link']}\n   Summary: {result['snippet']}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Found {len(search_results)} relevant sources'})}\n\n"
+        else:
+            yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ No search results, proceeding with general knowledge'})}\n\n"
+    except Exception as e:
+        yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Research phase error: {str(e)}'})}\n\n"
+    
+    # Initial draft with research context
     yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (Spartan precision)...'})}\n\n"
     
     writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
@@ -426,6 +520,8 @@ CONTENT REQUIREMENTS:
 
 INSTRUCTIONS:
 {instructions}
+
+{research_context}
 
 Remember: Write {word_count} words of sharp, direct body content. Then add references separately. No banned words. No fluff."""
 
