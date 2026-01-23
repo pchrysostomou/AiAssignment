@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | AI Assignment Architect</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .navbar h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .navbar .user-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .navbar .username {
+            font-weight: 600;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background 0.3s;
+        }
+
+        .navbar a:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 40px auto;
+            padding: 0 40px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .section h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 150px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+
+        #logContainer {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            max-height: 500px;
+            overflow-y: auto;
+            line-height: 1.6;
+            display: none;
+        }
+
+        #logContainer.active {
+            display: block;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 0;
+        }
+
+        .log-entry.score {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+
+        .log-entry.error {
+            color: #f48771;
+        }
+
+        .log-entry.success {
+            color: #b5cea8;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .progress-bar.active {
+            display: block;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .result-section {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-section.active {
+            display: block;
+        }
+
+        .result-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .history-section {
+            margin-top: 30px;
+        }
+
+        .history-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .history-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .history-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .history-card h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            color: #333;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .history-card .meta {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .history-card .score-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .score-badge.excellent {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .score-badge.good {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .score-badge.average {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .score-badge.poor {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .history-card .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #666;
+        }
+
+        .essay-content {
+            white-space: pre-wrap;
+            line-height: 1.8;
+            color: #333;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 20px;
+            }
+
+            .navbar {
+                padding: 15px 20px;
+            }
+
+            .result-stats {
+                grid-template-columns: 1fr;
+            }
+
+            .history-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <h1>🚀 AI Assignment Architect - PRO</h1>
+        <div class="user-info">
+            <span class="username">{{ current_user.username }}</span>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="section">
+            <h2>✍️ Create New Essay</h2>
+            <form id="essayForm">
+                <div class="form-group">
+                    <label for="instructions">Essay Instructions (£20/use)</label>
+                    <textarea id="instructions" name="instructions" placeholder="Enter your essay requirements here... Be specific about topic, word count, style, and any special requirements." required></textarea>
+                </div>
+                <button type="submit" class="btn" id="generateBtn">Generate Essay (£20)</button>
+            </form>
+
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-bar-fill" id="progressFill"></div>
+            </div>
+
+            <div id="logContainer"></div>
+
+            <div class="result-section" id="resultSection">
+                <h3>✅ Generation Complete!</h3>
+                <div class="result-stats">
+                    <div class="stat-card">
+                        <div class="value" id="finalScore">-</div>
+                        <div class="label">Final Score</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="roundsUsed">-</div>
+                        <div class="label">Rounds Used</div>
+                    </div>
+                </div>
+                <button class="btn" id="downloadBtn">Download Word Document</button>
+            </div>
+        </div>
+
+        <div class="section history-section">
+            <h2>📚 Your Essay History</h2>
+            {% if essays %}
+                <div class="history-grid">
+                    {% for essay in essays %}
+                    <div class="history-card">
+                        <h3>{{ essay.title }}</h3>
+                        <div class="meta">
+                            <span>{{ essay.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                            <span class="score-badge {% if essay.final_score >= 90 %}excellent{% elif essay.final_score >= 75 %}good{% elif essay.final_score >= 60 %}average{% else %}poor{% endif %}">
+                                {{ essay.final_score }}/100
+                            </span>
+                        </div>
+                        <div class="meta">
+                            <span>Rounds: {{ essay.rounds_used }}</span>
+                            <span>{{ essay.stop_reason.split(':')[0] }}</span>
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-small" onclick="viewEssay({{ essay.id }})">View</button>
+                            <a href="{{ url_for('download', essay_id=essay.id) }}" class="btn btn-secondary btn-small" style="text-decoration: none; display: inline-block;">Download</a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p style="text-align: center; color: #666; padding: 40px;">No essays yet. Create your first one above!</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="modal" id="viewModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Essay Details</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentEssayId = null;
+
+        document.getElementById('essayForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const instructions = document.getElementById('instructions').value;
+            const generateBtn = document.getElementById('generateBtn');
+            const logContainer = document.getElementById('logContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            const resultSection = document.getElementById('resultSection');
+            
+            // Reset UI
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Generating...';
+            logContainer.innerHTML = '';
+            logContainer.classList.add('active');
+            progressBar.classList.add('active');
+            progressFill.style.width = '0%';
+            resultSection.classList.remove('active');
+            
+            // Create EventSource for SSE
+            const formData = new FormData();
+            formData.append('instructions', instructions);
+            
+            const response = await fetch('/generate', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let currentRound = 0;
+            const maxRounds = 10;
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n\n');
+                buffer = lines.pop();
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = JSON.parse(line.slice(6));
+                        
+                        if (data.type === 'log') {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry';
+                            logEntry.textContent = data.message;
+                            logContainer.appendChild(logEntry);
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        } else if (data.type === 'score') {
+                            currentRound = data.round;
+                            const progress = (currentRound / maxRounds) * 100;
+                            progressFill.style.width = progress + '%';
+                            
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry score';
+                            logEntry.textContent = `Round ${data.round}: Score ${data.score}/100`;
+                            logContainer.appendChild(logEntry);
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        } else if (data.type === 'complete') {
+                            currentEssayId = data.essay_id;
+                            document.getElementById('finalScore').textContent = data.score;
+                            document.getElementById('roundsUsed').textContent = data.rounds;
+                            resultSection.classList.add('active');
+                            progressFill.style.width = '100%';
+                            
+                            // Reload page to show new essay in history
+                            setTimeout(() => {
+                                location.reload();
+                            }, 2000);
+                        } else if (data.type === 'error') {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry error';
+                            logEntry.textContent = '❌ ' + data.message;
+                            logContainer.appendChild(logEntry);
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        }
+                    }
+                }
+            }
+            
+            generateBtn.disabled = false;
+            generateBtn.textContent = 'Generate Essay (£20)';
+        });
+        
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            if (currentEssayId) {
+                window.location.href = `/download/${currentEssayId}`;
+            }
+        });
+        
+        async function viewEssay(essayId) {
+            const response = await fetch(`/view/${essayId}`);
+            const data = await response.json();
+            
+            const modalBody = document.getElementById('modalBody');
+            modalBody.innerHTML = `
+                <div style="margin-bottom: 20px;">
+                    <strong>Created:</strong> ${data.created_at}<br>
+                    <strong>Score:</strong> ${data.score}/100<br>
+                    <strong>Rounds:</strong> ${data.rounds}<br>
+                    <strong>Stop Reason:</strong> ${data.stop_reason}
+                </div>
+                <h3>Instructions:</h3>
+                <p style="margin-bottom: 20px; color: #666;">${data.instructions}</p>
+                <h3>Final Essay:</h3>
+                <div class="essay-content">${data.content}</div>
+            `;
+            
+            document.getElementById('modalTitle').textContent = data.title;
+            document.getElementById('viewModal').classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('viewModal').classList.remove('active');
+        }
+        
+        // Close modal on outside click
+        document.getElementById('viewModal').addEventListener('click', (e) => {
+            if (e.target.id === 'viewModal') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
