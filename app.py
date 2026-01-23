@@ -305,26 +305,26 @@ def call_claude(prompt, max_tokens=4000):
         raise Exception("Anthropic API key not configured")
     
     def api_call():
-        # Try claude-3-5-sonnet-20240620 first (most widely compatible)
+        # TIER 1 FIX: Use claude-3-5-sonnet-20241022 (primary) with claude-3-opus-latest (fallback)
         try:
-            print(f"🤖 Attempting Claude API call with model: claude-3-5-sonnet-20240620")
+            print(f"🤖 Attempting Claude API call with model: claude-3-5-sonnet-20241022")
             response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20240620",
+                model="claude-3-5-sonnet-20241022",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print(f"✅ Claude API call successful with model: claude-3-5-sonnet-20240620")
+            print(f"✅ Claude API call successful with model: claude-3-5-sonnet-20241022")
             return response.content[0].text
         except Exception as e:
-            print(f"⚠️ claude-3-5-sonnet-20240620 failed: {str(e)}")
-            # Fallback to claude-3-opus-20240229 to verify connection
-            print(f"🤖 Attempting fallback to claude-3-opus-20240229")
+            print(f"⚠️ claude-3-5-sonnet-20241022 failed: {str(e)}")
+            # Fallback to claude-3-opus-latest (Tier 1 compatible)
+            print(f"🤖 Attempting fallback to claude-3-opus-latest")
             response = anthropic_client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-3-opus-latest",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print(f"✅ Claude API call successful with fallback model: claude-3-opus-20240229")
+            print(f"✅ Claude API call successful with fallback model: claude-3-opus-latest")
             return response.content[0].text
     
     return call_with_retry(api_call)
