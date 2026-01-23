@@ -214,18 +214,39 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'docx', 'txt'}
 
 def extract_text_from_pdf(file_path):
-    """Extract text from PDF file"""
-    with open(file_path, 'rb') as file:
-        pdf_reader = PyPDF2.PdfReader(file)
-        return "\n".join([page.extract_text() for page in pdf_reader.pages]).strip()
+    """Extract text from PDF file with page limit for performance"""
+    try:
+        with open(file_path, 'rb') as file:
+            pdf_reader = PyPDF2.PdfReader(file)
+            # Limit to first 50 pages to prevent timeout
+            max_pages = min(len(pdf_reader.pages), 50)
+            text = "\n".join([pdf_reader.pages[i].extract_text() for i in range(max_pages)])
+            if len(pdf_reader.pages) > 50:
+                text += f"\n\n[Note: Document has {len(pdf_reader.pages)} pages. Only first 50 pages extracted for performance.]"
+            return text.strip()
+    except Exception as e:
+        raise Exception(f"PDF extraction error: {str(e)}")
 
 def extract_text_from_docx(file_path):
-    """Extract text from DOCX file"""
-    doc = Document(file_path)
-    return "\n".join([p.text for p in doc.paragraphs]).strip()
+    """Extract text from DOCX file with paragraph limit for performance"""
+    try:
+        doc = Document(file_path)
+        # Limit to first 200 paragraphs to prevent timeout
+        max_paragraphs = min(len(doc.paragraphs), 200)
+        text = "\n".join([doc.paragraphs[i].text for i in range(max_paragraphs)])
+        if len(doc.paragraphs) > 200:
+            text += f"\n\n[Note: Document has {len(doc.paragraphs)} paragraphs. Only first 200 extracted for performance.]"
+        return text.strip()
+    except Exception as e:
+        raise Exception(f"DOCX extraction error: {str(e)}")
 
 def extract_text_from_file(file_path, filename):
-    """Helper function to extract text from PDF or DOCX files"""
+    """Helper function to extract text from PDF or DOCX files with size limits"""
+    # Check file size (max 5MB per file to prevent timeout)
+    file_size = os.path.getsize(file_path)
+    if file_size > 5 * 1024 * 1024:  # 5MB
+        raise Exception(f"File too large ({file_size / (1024*1024):.1f}MB). Maximum 5MB per file.")
+    
     ext = filename.rsplit('.', 1)[1].lower()
     if ext == 'pdf':
         return extract_text_from_pdf(file_path)
@@ -233,7 +254,9 @@ def extract_text_from_file(file_path, filename):
         return extract_text_from_docx(file_path)
     elif ext == 'txt':
         with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read().strip()
+            # Limit text files to 100KB
+            text = f.read(100 * 1024)
+            return text.strip()
     raise Exception("Unsupported file type")
 
 def parse_uploaded_file(file_path, filename):
@@ -268,8 +291,6 @@ def google_search(query, num_results=5):
         
         print(f"🔍 Google Search Query: '{search_query}'")
         print(f"🔍 Using CSE ID: '{GOOGLE_CSE_ID}' (length: {len(GOOGLE_CSE_ID)})")
-        print(f"🔍 API Request URL: {url}")
-        print(f"🔍 API Request Params: key=...{str(google_api_key)[-4:]}, cx={GOOGLE_CSE_ID}, q={search_query[:50]}, num={num_results}")
         
         response = requests.get(url, params=params, timeout=10)
         
@@ -296,8 +317,6 @@ def google_search(query, num_results=5):
         
     except Exception as e:
         print(f"❌ Google Search error: {str(e)}")
-        import traceback
-        print(f"❌ Full traceback: {traceback.format_exc()}")
         return []
 
 # AI Helper Functions
@@ -310,34 +329,20 @@ def call_with_retry(func, max_retries=3):
                 raise
             time.sleep(2 * (attempt + 1))
 
-def call_claude(prompt, max_tokens=4000):
+def call_claude(prompt, max_tokens=8000):
+    """Call Claude Sonnet 3.5 - Tier 1 optimized"""
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
     
     def api_call():
-        # TIER 1 EMERGENCY FIX: Use claude-3-5-sonnet-20241022 with claude-3-haiku-20240307 fallback
-        try:
-            print(f"🤖 Attempting Claude API call with model: claude-3-5-sonnet-20241022")
-            response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            print(f"✅ Claude API call successful with model: claude-3-5-sonnet-20241022")
-            return response.content[0].text
-        except Exception as e:
-            print(f"⚠️ claude-3-5-sonnet-20241022 failed: {str(e)}")
-            # EMERGENCY FALLBACK: claude-3-haiku-20240307 (guaranteed high limits for Tier 1)
-            # CRITICAL: Haiku has a hard limit of 4096 max_tokens
-            haiku_max_tokens = min(max_tokens, 4096)
-            print(f"🤖 EMERGENCY FALLBACK: Attempting claude-3-haiku-20240307 (max_tokens capped at {haiku_max_tokens})")
-            response = anthropic_client.messages.create(
-                model="claude-3-haiku-20240307",
-                max_tokens=haiku_max_tokens,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            print(f"✅ Claude API call successful with EMERGENCY FALLBACK model: claude-3-haiku-20240307")
-            return response.content[0].text
+        print(f"🤖 Calling Claude Sonnet 3.5 (max_tokens: {max_tokens})")
+        response = anthropic_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        print(f"✅ Claude API call successful")
+        return response.content[0].text
     
     return call_with_retry(api_call)
 
@@ -371,6 +376,26 @@ def extract_score(text):
         if 0 <= score <= 100:
             return score
     return 0
+
+def count_words(text):
+    """Count words in text, excluding references section"""
+    # Try to find references section
+    ref_markers = ['references', 'bibliography', 'works cited']
+    text_lower = text.lower()
+    
+    for marker in ref_markers:
+        if f'\n{marker}\n' in text_lower or f'\n{marker}:' in text_lower:
+            # Split at references section
+            parts = re.split(f'\n{marker}[:\n]', text_lower, maxsplit=1)
+            if len(parts) > 1:
+                # Count only body text
+                body_text = parts[0]
+                words = body_text.split()
+                return len(words)
+    
+    # If no references section found, count all words
+    words = text.split()
+    return len(words)
 
 def check_url_status(url):
     """Check if URL is live (HTTP 200) or broken"""
@@ -532,12 +557,12 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - Essay Writer with SPARTAN ACADEMIC Protocol + Google Search
+# TOOL B: The Architect - Essay Writer with SPARTAN ACADEMIC Protocol + Smart Citations
 def generate_essay_stream(instructions, word_count):
     yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening ({word_count} words)...'})}\n\n"
     
-    # Calculate buffer (15% extra)
-    max_word_count = int(word_count * 1.15)
+    # Calculate buffer (20% extra to ensure we hit target)
+    max_word_count = int(word_count * 1.20)
     
     # NEW: Research Phase - Use Google Custom Search for topic research
     yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
@@ -567,10 +592,19 @@ CORE MANDATE: Write with Spartan precision. Be direct, authoritative, and concis
 
 CRITICAL WORD COUNT RULES:
 1. TARGET: {word_count} words for the BODY TEXT ONLY (Introduction, Analysis, Conclusion)
-2. MAXIMUM ALLOWED: {max_word_count} words for body text (+15% buffer)
+2. MAXIMUM ALLOWED: {max_word_count} words for body text (+20% buffer)
 3. EXCLUSION: The References/Bibliography section is EXCLUDED from this word count limit
 4. DO NOT shorten the essay to fit references within the limit
 5. Write the full essay body first, THEN add a complete References section separately
+
+SMART CITATION LOGIC - Analyze the assignment type and decide:
+- CRITICAL REVIEW of a single paper/book: NO external citations needed (only cite the work being reviewed)
+- LITERATURE REVIEW: MANY citations needed (10-20+ sources)
+- RESEARCH ESSAY: MODERATE citations (5-10 sources)
+- OPINION PIECE: FEW citations (2-5 sources for key claims only)
+- COMPARATIVE ANALYSIS: MODERATE citations (cite each work being compared)
+
+Based on the instructions below, determine the appropriate citation level and include REAL academic citations ONLY when necessary.
 
 THE BAN LIST - STRICTLY FORBIDDEN WORDS (Essay FAILS if used):
 ❌ delve
@@ -598,22 +632,17 @@ SPARTAN STYLE RULES:
 - Contractions are acceptable when they strengthen voice (it's, don't, can't).
 - Minor stylistic imperfections for authenticity (humans aren't perfect).
 
-CONTENT REQUIREMENTS:
-- Include REAL academic citations (Harvard/APA format)
-- Every major claim needs a citation
-- Use credible academic sources only
-- Full References/Bibliography section at the end (NOT counted in word limit)
-
 INSTRUCTIONS:
 {instructions}
 
 {research_context}
 
-Remember: Write {word_count} words of sharp, direct body content. Then add references separately. No banned words. No fluff."""
+Remember: Write {word_count} words of sharp, direct body content. Apply smart citation logic based on assignment type. No banned words. No fluff."""
 
     try:
-        current_draft = call_claude(writer_prompt, max_tokens=6000)
-        yield f"data: {json.dumps({'type': 'log', 'message': '✅ Initial draft complete'})}\n\n"
+        current_draft = call_claude(writer_prompt, max_tokens=8000)
+        current_word_count = count_words(current_draft)
+        yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Initial draft complete ({current_word_count} words)'})}\n\n"
     except Exception as e:
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
@@ -621,9 +650,12 @@ Remember: Write {word_count} words of sharp, direct body content. Then add refer
     scores = []
     best_draft = current_draft
     best_score = 0
-
-    for round_num in range(1, 6):
-        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ Round {round_num}/5 ━━━'})}\n\n"
+    
+    # Dynamic rounds: Continue until word count is met AND score is good (max 10 rounds)
+    max_rounds = 10
+    for round_num in range(1, max_rounds + 1):
+        current_word_count = count_words(current_draft)
+        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ Round {round_num}/{max_rounds} ({current_word_count}/{word_count} words) ━━━'})}\n\n"
         
         # Dr. Strict grades
         yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Dr. Strict grading...'})}\n\n"
@@ -637,9 +669,11 @@ ESSAY: {current_draft}
 Evaluation criteria:
 - Content quality and depth
 - Argument structure and coherence
-- Citation usage and academic rigor
+- Citation usage and academic rigor (smart citation logic applied)
 - Writing style: Direct, authoritative, concise (Spartan)
+- Word count: Target {word_count} words (current: {current_word_count} words)
 - DEDUCT 20 POINTS if ANY banned words detected (delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust)
+- DEDUCT 10 POINTS if word count is below 90% of target
 
 Provide a score (0-100) in format: 'Score: [number]'"""
         
@@ -656,28 +690,42 @@ Provide a score (0-100) in format: 'Score: [number]'"""
                 best_score = score
                 best_draft = current_draft
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'Error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'Grading error: {str(e)}'})}\n\n"
             score = 0
             scores.append(0)
 
-        if score >= 90:
-            yield f"data: {json.dumps({'type': 'log', 'message': '🎉 SUCCESS! High score achieved.'})}\n\n"
+        # Success criteria: Good score AND adequate word count
+        word_count_ratio = current_word_count / word_count
+        if score >= 85 and word_count_ratio >= 0.90:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 SUCCESS! Score: {score}/100, Words: {current_word_count}/{word_count}'})}\n\n"
+            break
+        
+        # Stop if we've done enough rounds
+        if round_num >= max_rounds:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⏱️ Max rounds reached. Best score: {best_score}/100'})}\n\n"
             break
 
-        # Citation verification
+        # Citation verification (skip for critical reviews)
         yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Dean Logic verifying citations...'})}\n\n"
         
-        citation_prompt = f"""Verify ALL citations in this essay. Check if papers/sources exist and are credible.
+        citation_prompt = f"""Verify citations in this essay based on assignment type.
+
+INSTRUCTIONS: {instructions}
 
 ESSAY: {current_draft}
 
-For each citation:
-1. Extract full citation details
-2. Verify if source exists and is credible
-3. Check relevance to the claim
-4. Mark: VERIFIED / SUSPICIOUS / FAKE
+First, determine the assignment type:
+- Critical review of single work → Minimal citations needed
+- Literature review → Many citations needed
+- Research essay → Moderate citations needed
+- Opinion piece → Few citations needed
 
-Return JSON format with verification results and fake_count."""
+Then verify:
+1. Are citations appropriate for this assignment type?
+2. Are cited sources credible and real?
+3. Mark: VERIFIED / SUSPICIOUS / FAKE
+
+Return JSON format with verification results."""
 
         try:
             citation_response = call_gemini(citation_prompt)
@@ -686,16 +734,30 @@ Return JSON format with verification results and fake_count."""
         except:
             citation_response = "Citation check error"
 
-        # Revise
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising (Spartan mode)...'})}\n\n"
+        # Revise with focus on word count if needed
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising...'})}\n\n"
         
-        refine_prompt = f"""Revise the essay based on feedback. Replace any fake or suspicious citations with real ones. Apply SPARTAN ACADEMIC protocol.
+        word_count_guidance = ""
+        if word_count_ratio < 0.90:
+            word_count_guidance = f"\n\nCRITICAL: Current word count ({current_word_count}) is below target ({word_count}). EXPAND the essay by adding more depth, examples, and analysis. DO NOT just add filler - add substantive content."
+        elif word_count_ratio > 1.15:
+            word_count_guidance = f"\n\nNote: Current word count ({current_word_count}) exceeds target ({word_count}). Tighten the essay by removing redundancy while keeping all key points."
+        
+        refine_prompt = f"""Revise the essay based on feedback. Apply SPARTAN ACADEMIC protocol.
 
 CRITICAL WORD COUNT RULES (MUST FOLLOW):
 1. TARGET: {word_count} words for BODY TEXT ONLY
-2. MAXIMUM: {max_word_count} words for body text (+15% buffer)
+2. MAXIMUM: {max_word_count} words for body text (+20% buffer)
 3. References/Bibliography is EXCLUDED from word count
 4. DO NOT cut essay content to fit references in the limit
+{word_count_guidance}
+
+SMART CITATION LOGIC:
+- Analyze assignment type and apply appropriate citation level
+- Critical review of single work → Minimal external citations
+- Literature review → Many citations
+- Research essay → Moderate citations
+- Opinion piece → Few citations for key claims only
 
 THE BAN LIST - STRICTLY FORBIDDEN (Essay FAILS if used):
 ❌ delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust
@@ -714,16 +776,18 @@ EXAMINER FEEDBACK: {examiner_response}
 
 CITATION VERIFICATION: {citation_response}
 
-Improve the essay while maintaining {word_count} words of sharp body content (excluding references). Zero banned words. Zero fluff."""
+Improve the essay while hitting {word_count} words of sharp body content (excluding references). Apply smart citations. Zero banned words. Zero fluff."""
 
         try:
-            current_draft = call_claude(refine_prompt, max_tokens=6000)
-            yield f"data: {json.dumps({'type': 'log', 'message': '✅ Revision complete'})}\n\n"
+            current_draft = call_claude(refine_prompt, max_tokens=8000)
+            new_word_count = count_words(current_draft)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Revision complete ({new_word_count} words)'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Revision error: {str(e)}'})}\n\n"
             break
 
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Complete! Best: {best_score}/100'})}\n\n"
+    final_word_count = count_words(best_draft)
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Complete! Best: {best_score}/100, Words: {final_word_count}/{word_count}'})}\n\n"
     
     # Save
     try:
@@ -1134,23 +1198,36 @@ Be polite, concise, and helpful. Troubleshoot errors and explain features."""
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    """Optimized file upload handler with size limits and timeout prevention"""
     if 'file' not in request.files:
         return jsonify({'error': 'No file'}), 400
     
     file = request.files['file']
     if not file.filename or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file'}), 400
+        return jsonify({'error': 'Invalid file type. Supported: PDF, DOCX, TXT'}), 400
     
     try:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # Save file
         file.save(filepath)
         
+        # Extract text with size limits
         text = extract_text_from_file(filepath, filename)
+        
+        # Clean up
         os.remove(filepath)
+        
+        # Limit extracted text to prevent frontend issues (max 50KB)
+        if len(text) > 50000:
+            text = text[:50000] + "\n\n[Text truncated for performance. Full content will be used in processing.]"
         
         return jsonify({'success': True, 'text': text})
     except Exception as e:
+        # Clean up on error
+        if os.path.exists(filepath):
+            os.remove(filepath)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/create-checkout-session', methods=['POST'])
