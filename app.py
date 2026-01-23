@@ -349,7 +349,7 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - Essay Writer with Smart Word Count Logic
+# TOOL B: The Architect - Essay Writer with SPARTAN ACADEMIC Protocol
 def generate_essay_stream(instructions, word_count):
     yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening ({word_count} words)...'})}\n\n"
     
@@ -357,9 +357,11 @@ def generate_essay_stream(instructions, word_count):
     max_word_count = int(word_count * 1.15)
     
     # Initial draft
-    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (human-like style)...'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (Spartan precision)...'})}\n\n"
     
-    writer_prompt = f"""You are Prof. Quill, a human ghostwriter. Write naturally.
+    writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
+
+CORE MANDATE: Write with Spartan precision. Be direct, authoritative, and concise. Avoid flowery language. Every sentence must add value.
 
 CRITICAL WORD COUNT RULES:
 1. TARGET: {word_count} words for the BODY TEXT ONLY (Introduction, Analysis, Conclusion)
@@ -368,12 +370,31 @@ CRITICAL WORD COUNT RULES:
 4. DO NOT shorten the essay to fit references within the limit
 5. Write the full essay body first, THEN add a complete References section separately
 
-STYLE RULES:
-- NO AI buzzwords: delve, tapestry, multifaceted, landscape, realm
-- Vary sentence length (mix short and long sentences)
-- Use contractions occasionally (it's, don't, can't)
-- Minor stylistic imperfections for authenticity
-- Personal voice and natural flow
+THE BAN LIST - STRICTLY FORBIDDEN WORDS (Essay FAILS if used):
+❌ delve
+❌ tapestry
+❌ landscape
+❌ leverage
+❌ spearhead
+❌ multifaceted
+❌ underscore
+❌ testament
+❌ symphony
+❌ rich
+❌ realm
+❌ myriad
+❌ plethora
+❌ paradigm
+❌ robust
+
+SPARTAN STYLE RULES:
+- Direct, authoritative tone. No hedging ("perhaps", "might", "could be").
+- Vary sentence length strategically. Short sentences drive points home. Longer sentences develop complex ideas.
+- Avoid excessive transition words. Do NOT overuse: "Furthermore", "Moreover", "In conclusion", "Additionally".
+- Use active voice. "The study proves X" not "X is proven by the study".
+- Cut unnecessary words. "The fact that" → "That". "In order to" → "To".
+- Contractions are acceptable when they strengthen voice (it's, don't, can't).
+- Minor stylistic imperfections for authenticity (humans aren't perfect).
 
 CONTENT REQUIREMENTS:
 - Include REAL academic citations (Harvard/APA format)
@@ -384,7 +405,7 @@ CONTENT REQUIREMENTS:
 INSTRUCTIONS:
 {instructions}
 
-Remember: Write {word_count} words of body content, then add references separately."""
+Remember: Write {word_count} words of sharp, direct body content. Then add references separately. No banned words. No fluff."""
 
     try:
         current_draft = call_claude(writer_prompt, max_tokens=6000)
@@ -403,7 +424,7 @@ Remember: Write {word_count} words of body content, then add references separate
         # Dr. Strict grades
         yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Dr. Strict grading...'})}\n\n"
         
-        examiner_prompt = f"""Grade this essay (0-100).
+        examiner_prompt = f"""Grade this essay (0-100). Apply SPARTAN ACADEMIC standards.
 
 INSTRUCTIONS: {instructions}
 
@@ -413,7 +434,8 @@ Evaluation criteria:
 - Content quality and depth
 - Argument structure and coherence
 - Citation usage and academic rigor
-- Writing style and clarity
+- Writing style: Direct, authoritative, concise (Spartan)
+- DEDUCT 20 POINTS if ANY banned words detected (delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust)
 
 Provide a score (0-100) in format: 'Score: [number]'"""
         
@@ -461,15 +483,24 @@ Return JSON format with verification results and fake_count."""
             citation_response = "Citation check error"
 
         # Revise
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising (Spartan mode)...'})}\n\n"
         
-        refine_prompt = f"""Revise the essay based on feedback. Replace any fake or suspicious citations with real ones.
+        refine_prompt = f"""Revise the essay based on feedback. Replace any fake or suspicious citations with real ones. Apply SPARTAN ACADEMIC protocol.
 
 CRITICAL WORD COUNT RULES (MUST FOLLOW):
 1. TARGET: {word_count} words for BODY TEXT ONLY
 2. MAXIMUM: {max_word_count} words for body text (+15% buffer)
 3. References/Bibliography is EXCLUDED from word count
 4. DO NOT cut essay content to fit references in the limit
+
+THE BAN LIST - STRICTLY FORBIDDEN (Essay FAILS if used):
+❌ delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust
+
+SPARTAN STYLE:
+- Direct, authoritative. No hedging.
+- Vary sentence length. Short sentences punch. Longer ones develop.
+- Cut transition word overuse (Furthermore, Moreover, Additionally).
+- Active voice. Cut fluff.
 
 ORIGINAL INSTRUCTIONS: {instructions}
 
@@ -479,7 +510,7 @@ EXAMINER FEEDBACK: {examiner_response}
 
 CITATION VERIFICATION: {citation_response}
 
-Improve the essay while maintaining {word_count} words of body content (excluding references). No AI buzzwords."""
+Improve the essay while maintaining {word_count} words of sharp body content (excluding references). Zero banned words. Zero fluff."""
 
         try:
             current_draft = call_claude(refine_prompt, max_tokens=6000)

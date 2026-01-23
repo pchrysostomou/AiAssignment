@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}The Academic Board{% endblock %}</title>
     <script src="https://js.stripe.com/v3/"></script>
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -30,6 +31,18 @@
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
+            position: relative;
+        }
+
+        /* Neural Network Particles Background */
+        #particles-js {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            background: #050505;
         }
 
         /* Left Sidebar */
@@ -193,7 +206,8 @@
             margin-left: 280px;
             flex: 1;
             min-height: 100vh;
-            background: #050505;
+            position: relative;
+            z-index: 1;
         }
 
         .content-wrapper {
@@ -234,7 +248,8 @@
             right: 30px;
             width: 350px;
             height: 500px;
-            background: var(--bg-deep);
+            background: rgba(5, 5, 5, 0.95);
+            backdrop-filter: blur(20px);
             border: 2px solid var(--glass-border);
             border-radius: 16px;
             display: none;
@@ -366,6 +381,9 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <!-- Neural Network Particles Background -->
+    <div id="particles-js"></div>
+
     <!-- Left Sidebar -->
     <div class="sidebar">
         <a href="{{ url_for('dashboard') }}" class="sidebar-brand">🎓 Academic Board</a>
@@ -442,6 +460,96 @@
     </div>
 
     <script>
+        // Initialize Particles.js - Neural Network Effect
+        particlesJS('particles-js', {
+            particles: {
+                number: {
+                    value: 80,
+                    density: {
+                        enable: true,
+                        value_area: 800
+                    }
+                },
+                color: {
+                    value: ['#00d4ff', '#ffffff']
+                },
+                shape: {
+                    type: 'circle',
+                    stroke: {
+                        width: 0,
+                        color: '#000000'
+                    }
+                },
+                opacity: {
+                    value: 0.3,
+                    random: true,
+                    anim: {
+                        enable: true,
+                        speed: 0.5,
+                        opacity_min: 0.1,
+                        sync: false
+                    }
+                },
+                size: {
+                    value: 3,
+                    random: true,
+                    anim: {
+                        enable: true,
+                        speed: 2,
+                        size_min: 0.5,
+                        sync: false
+                    }
+                },
+                line_linked: {
+                    enable: true,
+                    distance: 150,
+                    color: '#00d4ff',
+                    opacity: 0.2,
+                    width: 1
+                },
+                move: {
+                    enable: true,
+                    speed: 1,
+                    direction: 'none',
+                    random: true,
+                    straight: false,
+                    out_mode: 'out',
+                    bounce: false,
+                    attract: {
+                        enable: true,
+                        rotateX: 600,
+                        rotateY: 1200
+                    }
+                }
+            },
+            interactivity: {
+                detect_on: 'canvas',
+                events: {
+                    onhover: {
+                        enable: true,
+                        mode: 'grab'
+                    },
+                    onclick: {
+                        enable: true,
+                        mode: 'push'
+                    },
+                    resize: true
+                },
+                modes: {
+                    grab: {
+                        distance: 140,
+                        line_linked: {
+                            opacity: 0.5
+                        }
+                    },
+                    push: {
+                        particles_nb: 4
+                    }
+                }
+            },
+            retina_detect: true
+        });
+
         function toggleDropdown() {
             document.getElementById('userDropdown').classList.toggle('active');
         }
