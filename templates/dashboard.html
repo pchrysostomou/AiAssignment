@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Assignment Architect - Dashboard</title>
+    <title>The Academic Board - Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <script src="https://js.stripe.com/v3/"></script>
     <style>
@@ -24,7 +24,6 @@
             --text-primary: #ffffff;
             --text-secondary: #a0aec0;
             --success-green: #00ff88;
-            --warning-yellow: #ffd700;
         }
 
         body {
@@ -35,14 +34,11 @@
             background-image: 
                 radial-gradient(at 0% 0%, rgba(0, 212, 255, 0.1) 0px, transparent 50%),
                 radial-gradient(at 100% 100%, rgba(181, 55, 242, 0.1) 0px, transparent 50%);
-            overflow-x: hidden;
         }
 
-        /* Glassmorphism Navbar */
         .navbar {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--glass-border);
             padding: 20px 40px;
             display: flex;
@@ -60,7 +56,6 @@
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
         .navbar .user-info {
@@ -89,8 +84,8 @@
             padding: 0 40px;
         }
 
-        /* Agent Hub - Minimalist Atoms Style */
-        .agent-hub {
+        /* The Professors - Human Cartoon Avatars */
+        .professor-board {
             display: flex;
             justify-content: center;
             gap: 80px;
@@ -103,7 +98,7 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
-        .agent {
+        .professor {
             position: relative;
             display: flex;
             flex-direction: column;
@@ -112,36 +107,36 @@
             transition: transform 0.3s;
         }
 
-        .agent:hover {
+        .professor:hover {
             transform: translateY(-10px);
         }
 
-        .agent-avatar {
+        .professor-avatar {
             width: 120px;
             height: 120px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 48px;
+            font-size: 64px;
             position: relative;
             background: var(--bg-darker);
             border: 3px solid var(--glass-border);
             transition: all 0.4s;
         }
 
-        /* Pulse animations for each agent */
-        .agent-avatar.active-writer {
+        /* Pulse animations for professors */
+        .professor-avatar.active-quill {
             box-shadow: 0 0 40px var(--accent-blue), 0 0 80px var(--accent-blue);
             animation: pulse-blue 1.5s ease-in-out infinite;
         }
 
-        .agent-avatar.active-examiner {
+        .professor-avatar.active-strict {
             box-shadow: 0 0 40px var(--accent-purple), 0 0 80px var(--accent-purple);
             animation: pulse-purple 1.5s ease-in-out infinite;
         }
 
-        .agent-avatar.active-reviewer {
+        .professor-avatar.active-logic {
             box-shadow: 0 0 40px var(--accent-pink), 0 0 80px var(--accent-pink);
             animation: pulse-pink 1.5s ease-in-out infinite;
         }
@@ -161,8 +156,7 @@
             50% { box-shadow: 0 0 60px var(--accent-pink), 0 0 120px var(--accent-pink); }
         }
 
-        /* Enhanced Tooltip - Shows all info on hover */
-        .agent-tooltip {
+        .professor-tooltip {
             position: absolute;
             bottom: -120px;
             left: 50%;
@@ -179,34 +173,25 @@
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
         }
 
-        .agent:hover .agent-tooltip {
+        .professor:hover .professor-tooltip {
             opacity: 1;
         }
 
-        .agent-tooltip .tooltip-name {
+        .professor-tooltip .tooltip-name {
             font-size: 18px;
             font-weight: 700;
             margin-bottom: 8px;
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
-        .agent-tooltip .tooltip-model {
-            font-size: 14px;
-            color: var(--accent-blue);
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .agent-tooltip .tooltip-role {
+        .professor-tooltip .tooltip-role {
             font-size: 13px;
             color: var(--text-secondary);
             line-height: 1.6;
         }
 
-        /* Glass Section */
         .glass-section {
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
@@ -223,10 +208,8 @@
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
-        /* Drag & Drop Zone */
         .upload-zone {
             border: 2px dashed var(--glass-border);
             border-radius: 16px;
@@ -266,7 +249,6 @@
             color: var(--text-secondary);
         }
 
-        /* Form Elements */
         .form-group {
             margin-bottom: 20px;
         }
@@ -317,48 +299,54 @@
             box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
         }
 
-        /* Buttons */
-        .btn {
+        /* Skewed Hover Button Effect */
+        .btn-skewed {
+            width: 100%;
             padding: 16px 32px;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-            color: white;
-            border: none;
+            background: rgba(0, 212, 255, 0.1);
+            border: 2px solid var(--accent-blue);
             border-radius: 12px;
+            color: white;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
             position: relative;
             overflow: hidden;
+            transition: all 0.3s;
         }
 
-        .btn::before {
+        .btn-skewed::before {
             content: '';
             position: absolute;
             top: 0;
             left: -100%;
             width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-            transition: left 0.5s;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            transform: skewX(-30deg);
+            transition: left 0.5s ease;
+            z-index: -1;
         }
 
-        .btn:hover::before {
-            left: 100%;
+        .btn-skewed:hover:not(:disabled)::before {
+            left: 0;
         }
 
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
+        .btn-skewed:hover:not(:disabled) {
+            border-color: transparent;
             box-shadow: 0 8px 25px rgba(0, 212, 255, 0.5);
         }
 
-        .btn:disabled {
+        .btn-skewed:disabled {
             opacity: 0.5;
             cursor: not-allowed;
         }
 
-        /* Terminal-style Log Console */
+        .btn-small {
+            padding: 8px 16px;
+            font-size: 13px;
+        }
+
         .log-console {
             background: var(--bg-darker);
             border-radius: 12px;
@@ -387,10 +375,6 @@
             to { opacity: 1; }
         }
 
-        .log-entry.typing {
-            display: inline;
-        }
-
         .log-entry.score {
             color: var(--success-green);
             font-weight: bold;
@@ -400,23 +384,18 @@
             color: var(--accent-pink);
         }
 
-        .log-entry.system {
+        .log-entry.quill {
             color: var(--accent-blue);
         }
 
-        .log-entry.writer {
-            color: var(--accent-blue);
-        }
-
-        .log-entry.examiner {
+        .log-entry.strict {
             color: var(--accent-purple);
         }
 
-        .log-entry.reviewer {
+        .log-entry.logic {
             color: var(--accent-pink);
         }
 
-        /* Cursor for typewriter */
         .cursor {
             display: inline-block;
             width: 8px;
@@ -431,7 +410,6 @@
             51%, 100% { opacity: 0; }
         }
 
-        /* Progress Bar */
         .progress-bar {
             width: 100%;
             height: 6px;
@@ -455,7 +433,6 @@
             box-shadow: 0 0 10px var(--accent-blue);
         }
 
-        /* Result Section */
         .result-section {
             display: none;
             margin-top: 30px;
@@ -502,7 +479,6 @@
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
             margin-bottom: 8px;
         }
 
@@ -511,7 +487,6 @@
             font-size: 14px;
         }
 
-        /* History Grid */
         .history-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -570,7 +545,7 @@
         }
 
         .score-badge.average {
-            background: linear-gradient(135deg, var(--warning-yellow), #ffaa00);
+            background: linear-gradient(135deg, #ffd700, #ffaa00);
             color: var(--bg-dark);
         }
 
@@ -585,12 +560,6 @@
             margin-top: 15px;
         }
 
-        .btn-small {
-            padding: 8px 16px;
-            font-size: 13px;
-        }
-
-        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -633,7 +602,6 @@
             background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
         }
 
         .close-btn {
@@ -655,7 +623,6 @@
             color: var(--text-primary);
         }
 
-        /* Scrollbar */
         ::-webkit-scrollbar {
             width: 10px;
         }
@@ -682,7 +649,7 @@
                 padding: 15px 20px;
             }
 
-            .agent-hub {
+            .professor-board {
                 flex-direction: column;
                 gap: 30px;
             }
@@ -699,7 +666,7 @@
 </head>
 <body>
     <div class="navbar">
-        <h1>🚀 AI Assignment Architect</h1>
+        <h1>🎓 The Academic Board</h1>
         <div class="user-info">
             <span>{{ current_user.username }}</span>
             <a href="{{ url_for('logout') }}">Logout</a>
@@ -707,41 +674,37 @@
     </div>
 
     <div class="container">
-        <!-- Agent Hub - Minimalist Atoms Style (Icons Only) -->
-        <div class="agent-hub">
-            <div class="agent" id="writerAgent">
-                <div class="agent-avatar">✍️</div>
-                <div class="agent-tooltip">
-                    <div class="tooltip-name">Writer Agent</div>
-                    <div class="tooltip-model">Claude 3.5 Sonnet</div>
-                    <div class="tooltip-role">Creates and refines essay drafts using advanced language understanding. Specializes in academic writing, argumentation, and content structure.</div>
+        <!-- The Professors -->
+        <div class="professor-board">
+            <div class="professor" id="profQuill">
+                <div class="professor-avatar">🧙‍♂️</div>
+                <div class="professor-tooltip">
+                    <div class="tooltip-name">Prof. Quill</div>
+                    <div class="tooltip-role">The eccentric creative writer with messy hair. Specializes in crafting compelling narratives and academic arguments with flair.</div>
                 </div>
             </div>
 
-            <div class="agent" id="examinerAgent">
-                <div class="agent-avatar">🎯</div>
-                <div class="agent-tooltip">
-                    <div class="tooltip-name">Examiner Agent</div>
-                    <div class="tooltip-model">GPT-4o</div>
-                    <div class="tooltip-role">Evaluates essay quality with strict academic standards. Provides scores (0-100) and identifies areas for improvement.</div>
+            <div class="professor" id="drStrict">
+                <div class="professor-avatar">🧐</div>
+                <div class="professor-tooltip">
+                    <div class="tooltip-name">Dr. Strict</div>
+                    <div class="tooltip-role">The harsh grader with a monocle. Evaluates essays with uncompromising academic standards and identifies every weakness.</div>
                 </div>
             </div>
 
-            <div class="agent" id="reviewerAgent">
-                <div class="agent-avatar">💬</div>
-                <div class="agent-tooltip">
-                    <div class="tooltip-name">Reviewer Agent</div>
-                    <div class="tooltip-model">Gemini 1.5 Pro</div>
-                    <div class="tooltip-role">Provides detailed feedback and actionable suggestions. Focuses on content depth, style refinement, and structural improvements.</div>
+            <div class="professor" id="deanLogic">
+                <div class="professor-avatar">👔</div>
+                <div class="professor-tooltip">
+                    <div class="tooltip-name">Dean Logic</div>
+                    <div class="tooltip-role">The final boss in a sharp suit. Provides strategic feedback and ensures your essay meets the highest academic excellence.</div>
                 </div>
             </div>
         </div>
 
         <!-- Main Section -->
         <div class="glass-section">
-            <h2 class="section-title">✨ Create New Essay</h2>
+            <h2 class="section-title">✨ Submit Your Assignment</h2>
             
-            <!-- Drag & Drop Upload Zone -->
             <div class="upload-zone" id="uploadZone">
                 <div class="upload-icon">📄</div>
                 <div class="upload-text">Drag & Drop your file here</div>
@@ -751,7 +714,7 @@
 
             <form id="essayForm">
                 <div class="form-group">
-                    <label for="wordCount">Target Word Count</label>
+                    <label for="wordCount">Select Essay Length</label>
                     <select id="wordCount" name="word_count" required>
                         <option value="2000">Standard (Up to 2,000 words) - £20</option>
                         <option value="4000">Extended (Up to 4,000 words) - £40</option>
@@ -763,7 +726,7 @@
                     <textarea id="instructions" name="instructions" placeholder="Paste your essay instructions here... Be specific about topic, requirements, and style." required></textarea>
                 </div>
 
-                <button type="submit" class="btn" id="generateBtn">Pay & Generate Essay</button>
+                <button type="submit" class="btn-skewed" id="generateBtn">Pay & Generate Essay</button>
             </form>
 
             <div class="progress-bar" id="progressBar">
@@ -773,7 +736,7 @@
             <div class="log-console" id="logConsole"></div>
 
             <div class="result-section" id="resultSection">
-                <h3 style="margin-bottom: 20px;">✅ Generation Complete!</h3>
+                <h3 style="margin-bottom: 20px;">✅ The Board Has Concluded!</h3>
                 <div class="result-stats">
                     <div class="stat-card">
                         <div class="value" id="finalScore">-</div>
@@ -784,7 +747,7 @@
                         <div class="label">Rounds Used</div>
                     </div>
                 </div>
-                <button class="btn" id="downloadBtn">Download Word Document</button>
+                <button class="btn-skewed" id="downloadBtn">Download Word Document</button>
             </div>
         </div>
 
@@ -807,19 +770,18 @@
                             <span>Rounds: {{ essay.rounds_used }}</span>
                         </div>
                         <div class="actions">
-                            <button class="btn btn-small" onclick="viewEssay({{ essay.id }})">View</button>
-                            <a href="{{ url_for('download', essay_id=essay.id) }}" class="btn btn-small" style="text-decoration: none; display: inline-block;">Download</a>
+                            <button class="btn-skewed btn-small" onclick="viewEssay({{ essay.id }})">View</button>
+                            <a href="{{ url_for('download', essay_id=essay.id) }}" class="btn-skewed btn-small" style="text-decoration: none; display: inline-block;">Download</a>
                         </div>
                     </div>
                     {% endfor %}
                 </div>
             {% else %}
-                <p style="text-align: center; color: var(--text-secondary); padding: 40px;">No essays yet. Create your first one above!</p>
+                <p style="text-align: center; color: var(--text-secondary); padding: 40px;">No essays yet. Submit your first assignment above!</p>
             {% endif %}
         </div>
     </div>
 
-    <!-- Modal -->
     <div class="modal" id="viewModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -831,12 +793,9 @@
     </div>
 
     <script>
-        // Stripe
         const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
         let currentEssayId = null;
-        let pendingGeneration = null;
 
-        // Check if we should start generation after payment
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('start_generation') === 'true') {
             const pendingEssay = sessionStorage.getItem('pending_essay');
@@ -846,14 +805,12 @@
                 document.getElementById('wordCount').value = data.word_count;
                 sessionStorage.removeItem('pending_essay');
                 
-                // Auto-start generation
                 setTimeout(() => {
                     startGeneration(data.instructions, data.word_count);
                 }, 500);
             }
         }
 
-        // File Upload
         const uploadZone = document.getElementById('uploadZone');
         const fileInput = document.getElementById('fileInput');
         const instructionsTextarea = document.getElementById('instructions');
@@ -920,26 +877,24 @@
             uploadZone.innerHTML = '<div class="upload-icon">📄</div><div class="upload-text">Drag & Drop your file here</div><div class="upload-subtext">or click to browse (PDF, DOCX supported)</div>';
         }
 
-        // Agent pulse control
-        function activateAgent(agentName) {
-            document.querySelectorAll('.agent-avatar').forEach(avatar => {
-                avatar.classList.remove('active-writer', 'active-examiner', 'active-reviewer');
+        function activateProfessor(professorName) {
+            document.querySelectorAll('.professor-avatar').forEach(avatar => {
+                avatar.classList.remove('active-quill', 'active-strict', 'active-logic');
             });
             
-            const agentMap = {
-                'writer': 'writerAgent',
-                'examiner': 'examinerAgent',
-                'reviewer': 'reviewerAgent'
+            const professorMap = {
+                'quill': 'profQuill',
+                'strict': 'drStrict',
+                'logic': 'deanLogic'
             };
             
-            const agentId = agentMap[agentName.toLowerCase()];
-            if (agentId) {
-                const avatar = document.querySelector(`#${agentId} .agent-avatar`);
-                avatar.classList.add(`active-${agentName.toLowerCase()}`);
+            const professorId = professorMap[professorName.toLowerCase()];
+            if (professorId) {
+                const avatar = document.querySelector(`#${professorId} .professor-avatar`);
+                avatar.classList.add(`active-${professorName.toLowerCase()}`);
             }
         }
 
-        // Typewriter effect
         function typewriterEffect(element, text, speed = 20) {
             return new Promise((resolve) => {
                 let i = 0;
@@ -963,7 +918,6 @@
             });
         }
 
-        // Essay Form Submission - Redirect to Stripe
         document.getElementById('essayForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -975,13 +929,11 @@
                 return;
             }
 
-            // Store for post-payment
             sessionStorage.setItem('pending_essay', JSON.stringify({
                 instructions: instructions,
                 word_count: wordCount
             }));
 
-            // Create Stripe session and redirect
             try {
                 const response = await fetch('/create-checkout-session', {
                     method: 'POST',
@@ -1001,7 +953,6 @@
                     return;
                 }
                 
-                // Redirect to Stripe Checkout
                 const result = await stripe.redirectToCheckout({
                     sessionId: session.id
                 });
@@ -1014,7 +965,6 @@
             }
         });
 
-        // Start Generation (called after payment success)
         async function startGeneration(instructions, wordCount) {
             const generateBtn = document.getElementById('generateBtn');
             const logConsole = document.getElementById('logConsole');
@@ -1059,10 +1009,10 @@
                         
                         if (data.type === 'log') {
                             const logEntry = document.createElement('div');
-                            logEntry.className = `log-entry ${data.agent || ''}`;
+                            logEntry.className = `log-entry ${data.professor || ''}`;
                             
-                            if (data.agent && data.agent !== 'system') {
-                                activateAgent(data.agent);
+                            if (data.professor && data.professor !== 'system') {
+                                activateProfessor(data.professor);
                             }
                             
                             logConsole.appendChild(logEntry);
