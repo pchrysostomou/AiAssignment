@@ -43,12 +43,13 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+# Stripe initialization - uses environment variable
 stripe_key = os.getenv('STRIPE_SECRET_KEY', '')
 if stripe_key:
     stripe.api_key = stripe_key
-    print(f"✅ Stripe Key Loaded")
+    print(f"✅ Stripe Key Loaded (ending: ...{stripe_key[-4:]})")
 else:
-    print("⚠️ WARNING: STRIPE_SECRET_KEY not found")
+    print("⚠️ WARNING: STRIPE_SECRET_KEY not found in environment variables")
 
 DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
 
@@ -791,17 +792,24 @@ def register():
             flash('Passwords do not match!', 'error')
             return redirect(url_for('register'))
         
+        # FIX: Check for existing username
         if User.query.filter_by(username=username).first():
-            flash('Username exists', 'error')
+            flash('Username already exists. Please choose a different username.', 'error')
             return redirect(url_for('register'))
         
-        user = User(username=username, email=email)
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
+        # FIX: Check for existing email
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered. Please use a different email or login.', 'error')
+            return redirect(url_for('register'))
         
-        # Send mock welcome email
-        email_body = f"""
+        try:
+            user = User(username=username, email=email)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            
+            # Send mock welcome email
+            email_body = f"""
 Welcome to The Academic Board, {username}!
 
 Your account has been successfully created.
@@ -816,11 +824,16 @@ Login now at: {DOMAIN}
 
 Best regards,
 The Academic Board Team
-        """
-        send_email_mock(email, "Welcome to The Academic Board!", email_body)
-        
-        flash('Welcome aboard! (Check console for mock email)', 'success')
-        return redirect(url_for('login'))
+            """
+            send_email_mock(email, "Welcome to The Academic Board!", email_body)
+            
+            flash('Welcome aboard! (Check console for mock email)', 'success')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            flash('Registration failed. Please try again.', 'error')
+            print(f"Registration error: {str(e)}")
+            return redirect(url_for('register'))
     
     return render_template('login.html')
 
