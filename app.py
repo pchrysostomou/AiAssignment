@@ -246,13 +246,22 @@ def google_search(query, num_results=5):
         return []
     
     try:
+        # Extract key terms from query (remove common words, limit length)
+        # This makes the query less restrictive and more likely to return results
+        words = query.split()
+        # Take first 10 meaningful words (skip very short words)
+        key_words = [w for w in words if len(w) > 3][:10]
+        search_query = ' '.join(key_words) if key_words else query[:100]
+        
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             'key': google_api_key,
             'cx': GOOGLE_CSE_ID,
-            'q': query,
+            'q': search_query,
             'num': num_results
         }
+        
+        print(f"🔍 Google Search Query: '{search_query}'")
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -267,7 +276,7 @@ def google_search(query, num_results=5):
                 'snippet': item.get('snippet', '')
             })
         
-        print(f"✅ Google Search completed: {len(results)} results for '{query}'")
+        print(f"✅ Google Search completed: {len(results)} results for '{search_query}'")
         return results
         
     except Exception as e:
@@ -290,7 +299,7 @@ def call_claude(prompt, max_tokens=4000):
     
     def api_call():
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-latest",
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -501,7 +510,8 @@ def generate_essay_stream(instructions, word_count):
     research_context = ""
     try:
         # Extract key topics from instructions for targeted search
-        search_query = instructions[:200]  # Use first 200 chars as search query
+        # Use a more flexible search query (first 150 chars, key terms only)
+        search_query = instructions[:150]
         search_results = google_search(search_query, num_results=5)
         
         if search_results:
