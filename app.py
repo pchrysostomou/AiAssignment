@@ -999,6 +999,7 @@ def create_checkout_session():
         
         session['pending_task'] = {'tool_type': tool_type, 'data': data}
         
+        # FIX: Hardcode Render domain for success_url to bypass Clerk
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
@@ -1011,8 +1012,8 @@ def create_checkout_session():
             }],
             mode='payment',
             allow_promotion_codes=True,
-            success_url=DOMAIN + f'/payment-success?session_id={{CHECKOUT_SESSION_ID}}&tool={tool_type}',
-            cancel_url=DOMAIN + '/dashboard',
+            success_url='https://aiassignment-x631.onrender.com/payment-success?session_id={CHECKOUT_SESSION_ID}&tool=' + tool_type,
+            cancel_url='https://aiassignment-x631.onrender.com/dashboard',
             client_reference_id=str(current_user.id),
             customer_email=current_user.email,
         )
