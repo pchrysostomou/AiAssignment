@@ -261,7 +261,10 @@ Provide a score (0-100) and brief justification. Format: "Score: [number]" follo
             scores.append(score)
             
             yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': score, 'professor': 'strict'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dr. Strict\'s verdict: {score}/100', 'professor': 'strict'})}\n\n"
+            
+            # Fix: Build message string first, then use it in json.dumps
+            verdict_message = f"📊 Dr. Strict's verdict: {score}/100"
+            yield f"data: {json.dumps({'type': 'log', 'message': verdict_message, 'professor': 'strict'})}\n\n"
             
             if score > best_score:
                 best_score = score
@@ -311,7 +314,7 @@ Provide detailed critique focusing on:
         try:
             reviewer_response = call_gemini_reviewer(reviewer_prompt)
             previous_feedback = reviewer_response
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📋 Dean Logic has provided feedback.', 'professor': 'logic'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '📋 Dean Logic has provided feedback.', 'professor': 'logic'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Dean Logic error: {str(e)}', 'professor': 'logic'})}\n\n"
             previous_feedback = "No feedback available due to error."
@@ -337,7 +340,7 @@ Based on the feedback above, rewrite and improve the essay. Address all critique
         try:
             current_draft = call_claude_writer(refine_prompt)
             full_history += f"Round {round_num} Feedback:\n{previous_feedback}\n\nRevised Draft {round_num + 1}:\n{current_draft}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Prof. Quill has revised the draft.', 'professor': 'quill'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '✅ Prof. Quill has revised the draft.', 'professor': 'quill'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'message': f'❌ Prof. Quill error: {str(e)}', 'professor': 'quill'})}\n\n"
             break
