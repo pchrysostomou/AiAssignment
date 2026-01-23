@@ -117,8 +117,13 @@ PRICING = {
 # API Credentials Initialization with Validation
 anthropic_api_key = os.getenv('ANTHROPIC_API_KEY', '')
 if anthropic_api_key:
-    anthropic_client = anthropic.Anthropic(api_key=anthropic_api_key)
+    # Initialize with default_headers for API version compatibility
+    anthropic_client = anthropic.Anthropic(
+        api_key=anthropic_api_key,
+        default_headers={"anthropic-version": "2023-06-01"}
+    )
     print(f"✅ Anthropic API Key Loaded (ending: ...{anthropic_api_key[-4:]})")
+    print(f"✅ Anthropic Client Initialized with API version: 2023-06-01")
 else:
     anthropic_client = None
     print("⚠️ WARNING: ANTHROPIC_API_KEY not found in environment variables")
@@ -137,10 +142,10 @@ if google_api_key:
 else:
     print("⚠️ WARNING: GOOGLE_API_KEY not found in environment variables")
 
-# Google Custom Search Engine Configuration
-GOOGLE_CSE_ID = os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772')
-if GOOGLE_CSE_ID:
-    print(f"✅ Google CSE ID Configured: {GOOGLE_CSE_ID}")
+# Google Custom Search Engine Configuration - Ensure it's read as string
+GOOGLE_CSE_ID = str(os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772'))
+if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
+    print(f"✅ Google CSE ID Configured: {GOOGLE_CSE_ID} (type: {type(GOOGLE_CSE_ID).__name__})")
 else:
     print("⚠️ WARNING: GOOGLE_CSE_ID not found in environment variables")
 
@@ -241,8 +246,9 @@ def google_search(query, num_results=5):
     Perform Google Custom Search using the configured API key and CSE ID.
     Returns a list of search results with titles, links, and snippets.
     """
-    if not google_api_key or not GOOGLE_CSE_ID:
-        print("⚠️ Google Search unavailable: Missing API key or CSE ID")
+    # Verify both API key and CSE ID are valid strings
+    if not google_api_key or not GOOGLE_CSE_ID or GOOGLE_CSE_ID == '':
+        print(f"⚠️ Google Search unavailable: API key exists: {bool(google_api_key)}, CSE ID: '{GOOGLE_CSE_ID}' (type: {type(GOOGLE_CSE_ID).__name__})")
         return []
     
     try:
@@ -256,12 +262,13 @@ def google_search(query, num_results=5):
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             'key': google_api_key,
-            'cx': GOOGLE_CSE_ID,
+            'cx': str(GOOGLE_CSE_ID),  # Ensure CSE ID is string
             'q': search_query,
             'num': num_results
         }
         
         print(f"🔍 Google Search Query: '{search_query}'")
+        print(f"🔍 Using CSE ID: {GOOGLE_CSE_ID}")
         
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -298,12 +305,28 @@ def call_claude(prompt, max_tokens=4000):
         raise Exception("Anthropic API key not configured")
     
     def api_call():
-        response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-latest",
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.content[0].text
+        # Try claude-3-5-sonnet-20240620 first (most widely compatible)
+        try:
+            print(f"🤖 Attempting Claude API call with model: claude-3-5-sonnet-20240620")
+            response = anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20240620",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            print(f"✅ Claude API call successful with model: claude-3-5-sonnet-20240620")
+            return response.content[0].text
+        except Exception as e:
+            print(f"⚠️ claude-3-5-sonnet-20240620 failed: {str(e)}")
+            # Fallback to claude-3-opus-20240229 to verify connection
+            print(f"🤖 Attempting fallback to claude-3-opus-20240229")
+            response = anthropic_client.messages.create(
+                model="claude-3-opus-20240229",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            print(f"✅ Claude API call successful with fallback model: claude-3-opus-20240229")
+            return response.content[0].text
+    
     return call_with_retry(api_call)
 
 def call_gpt4(prompt, model="gpt-4o"):
