@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+
+{% block title %}The Detective - Plagiarism Check{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        text-align: center;
+        margin-bottom: 40px;
+    }
+
+    .page-header h1 {
+        font-size: 36px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 10px;
+    }
+
+    .page-header p {
+        color: var(--text-secondary);
+        font-size: 16px;
+    }
+
+    .tool-section {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+        margin-bottom: 30px;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: var(--neon-purple);
+    }
+
+    .upload-zone {
+        border: 2px dashed var(--glass-border);
+        border-radius: 16px;
+        padding: 60px 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: rgba(181, 55, 242, 0.02);
+        margin-bottom: 20px;
+    }
+
+    .upload-zone:hover {
+        border-color: var(--neon-purple);
+        background: rgba(181, 55, 242, 0.05);
+    }
+
+    .upload-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+    }
+
+    textarea {
+        width: 100%;
+        min-height: 300px;
+        padding: 20px;
+        background: var(--bg-deep);
+        border: 1px solid var(--glass-border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 15px;
+        font-family: inherit;
+        resize: vertical;
+    }
+
+    textarea:focus {
+        outline: none;
+        border-color: var(--neon-purple);
+        box-shadow: 0 0 20px rgba(181, 55, 242, 0.2);
+    }
+
+    .btn-neon {
+        width: 100%;
+        padding: 16px;
+        background: rgba(181, 55, 242, 0.1);
+        border: 2px solid var(--neon-purple);
+        border-radius: 12px;
+        color: white;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
+        margin-top: 20px;
+    }
+
+    .btn-neon::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+        transform: skewX(-30deg);
+        transition: left 0.5s;
+        z-index: -1;
+    }
+
+    .btn-neon:hover::before {
+        left: 0;
+    }
+
+    .btn-neon:hover {
+        border-color: transparent;
+        box-shadow: 0 8px 25px rgba(181, 55, 242, 0.5);
+    }
+
+    .btn-neon:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .result-box {
+        background: var(--glass-bg);
+        border-radius: 16px;
+        padding: 30px;
+        margin-top: 20px;
+        border: 1px solid var(--glass-border);
+        display: none;
+    }
+
+    .result-box.active {
+        display: block;
+    }
+
+    .result-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 15px;
+        color: var(--neon-purple);
+    }
+
+    .info-box {
+        background: rgba(181, 55, 242, 0.1);
+        border: 1px solid var(--neon-purple);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 30px;
+    }
+
+    .info-box h3 {
+        color: var(--neon-purple);
+        margin-bottom: 10px;
+    }
+
+    .info-box ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    .info-box li {
+        padding: 5px 0;
+        color: var(--text-secondary);
+    }
+
+    .info-box li::before {
+        content: "✓ ";
+        color: var(--neon-purple);
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>🔍 The Detective</h1>
+        <p>3-Agent Plagiarism Detection with Source Verification</p>
+    </div>
+
+    <div class="tool-section">
+        <div class="info-box">
+            <h3>How The Detective Works:</h3>
+            <ul>
+                <li><strong>Step 1 - The Hunter (Gemini):</strong> Scans the web for matching sources and verifies link status</li>
+                <li><strong>Step 2 - The Analyst (GPT-4o):</strong> Compares your text with sources to detect copying and paraphrasing</li>
+                <li><strong>Step 3 - The Reporter (Claude):</strong> Generates professional PDF report with highlighted matches</li>
+            </ul>
+        </div>
+
+        <div class="section-title">Upload Document or Paste Text</div>
+        
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">📄</div>
+            <div style="font-size: 18px; margin-bottom: 10px;">Drag & Drop or Click to Upload</div>
+            <div style="color: var(--text-secondary); font-size: 14px;">Supports PDF, DOCX, TXT</div>
+            <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display: none;">
+        </div>
+
+        <div class="section-title">Or Paste Text Directly</div>
+        <textarea id="plagText" placeholder="Paste the text you want to check for plagiarism..."></textarea>
+
+        <button class="btn-neon" id="checkBtn" onclick="startPlagiarismCheck()">Pay £10 & Check Plagiarism</button>
+
+        <div class="result-box" id="resultBox">
+            <div class="result-title">✅ Analysis Complete!</div>
+            <p id="resultText"></p>
+            <button class="btn-neon" id="downloadBtn" style="margin-top: 20px;">Download PDF Report</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
+    
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const plagText = document.getElementById('plagText');
+    
+    uploadZone.addEventListener('click', () => fileInput.click());
+    
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--neon-purple)';
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.style.borderColor = 'var(--glass-border)';
+    });
+    
+    uploadZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--glass-border)';
+        
+        const file = e.dataTransfer.files[0];
+        if (file) await handleFileUpload(file);
+    });
+    
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (file) await handleFileUpload(file);
+    });
+    
+    async function handleFileUpload(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        uploadZone.innerHTML = '<div class="upload-icon">⏳</div><div>Processing file...</div>';
+        
+        try {
+            const response = await fetch('/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                plagText.value = data.text;
+                uploadZone.innerHTML = '<div class="upload-icon">✅</div><div>File processed successfully!</div>';
+            } else {
+                alert('Error: ' + data.error);
+                resetUploadZone();
+            }
+        } catch (error) {
+            alert('Upload error: ' + error.message);
+            resetUploadZone();
+        }
+    }
+    
+    function resetUploadZone() {
+        uploadZone.innerHTML = '<div class="upload-icon">📄</div><div style="font-size: 18px; margin-bottom: 10px;">Drag & Drop or Click to Upload</div><div style="color: var(--text-secondary); font-size: 14px;">Supports PDF, DOCX, TXT</div>';
+    }
+    
+    async function startPlagiarismCheck() {
+        const text = plagText.value.trim();
+        
+        if (!text) {
+            alert('Please provide text to check');
+            return;
+        }
+        
+        const checkBtn = document.getElementById('checkBtn');
+        checkBtn.disabled = true;
+        checkBtn.textContent = 'Processing Payment...';
+        
+        try {
+            const response = await fetch('/create-checkout-session', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    tool_type: 'plagiarism',
+                    text: text
+                })
+            });
+            
+            const session = await response.json();
+            
+            if (session.error) {
+                alert('Error: ' + session.error);
+                checkBtn.disabled = false;
+                checkBtn.textContent = 'Pay £10 & Check Plagiarism';
+                return;
+            }
+            
+            // Store text for after payment
+            sessionStorage.setItem('plagiarism_text', text);
+            
+            await stripe.redirectToCheckout({sessionId: session.id});
+        } catch (error) {
+            alert('Error: ' + error.message);
+            checkBtn.disabled = false;
+            checkBtn.textContent = 'Pay £10 & Check Plagiarism';
+        }
+    }
+    
+    // Check if returning from payment
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('paid') === 'true') {
+        const savedText = sessionStorage.getItem('plagiarism_text');
+        if (savedText) {
+            plagText.value = savedText;
+            sessionStorage.removeItem('plagiarism_text');
+            
+            // Start plagiarism check
+            performPlagiarismCheck(savedText);
+        }
+    }
+    
+    async function performPlagiarismCheck(text) {
+        const checkBtn = document.getElementById('checkBtn');
+        checkBtn.disabled = true;
+        checkBtn.textContent = 'Analyzing... (This may take 30-60 seconds)';
+        
+        try {
+            const formData = new FormData();
+            formData.append('text', text);
+            
+            const response = await fetch('/check-plagiarism', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                const resultBox = document.getElementById('resultBox');
+                const resultText = document.getElementById('resultText');
+                const downloadBtn = document.getElementById('downloadBtn');
+                
+                resultText.textContent = 'Your plagiarism report has been generated! The 3-agent team has analyzed your text, verified sources, and created a comprehensive PDF report.';
+                
+                downloadBtn.onclick = () => {
+                    window.location.href = data.pdf_url;
+                };
+                
+                resultBox.classList.add('active');
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        } finally {
+            checkBtn.disabled = false;
+            checkBtn.textContent = 'Pay £10 & Check Plagiarism';
+        }
+    }
+</script>
+{% endblock %}

@@ -1,801 +1,124 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Academic Board - Control Center</title>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <script src="https://js.stripe.com/v3/"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+{% extends "base.html" %}
 
-        :root {
-            --bg-deep: #0f0c29;
-            --bg-mid: #302b63;
-            --bg-light: #24243e;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --neon-blue: #00d4ff;
-            --neon-purple: #b537f2;
-            --neon-pink: #ff006e;
-            --neon-green: #00ff88;
-            --text-primary: #ffffff;
-            --text-secondary: #a0aec0;
-        }
+{% block title %}Dashboard - The Academic Board{% endblock %}
 
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-mid) 100%);
-            color: var(--text-primary);
-            min-height: 100vh;
-            position: relative;
-            overflow-x: hidden;
-        }
+{% block extra_css %}
+<style>
+    .page-title {
+        font-size: 36px;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 50px;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple), var(--neon-pink));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
 
-        /* 3D Rotating Cubes Background */
-        .cube-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            perspective: 1000px;
-            overflow: hidden;
-            z-index: 0;
-            opacity: 0.3;
-        }
+    .tools-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 30px;
+        margin-bottom: 50px;
+    }
 
-        .cube {
-            position: absolute;
-            width: 150px;
-            height: 150px;
-            transform-style: preserve-3d;
-            animation: rotateCube 25s infinite linear;
-        }
+    .tool-card {
+        background: var(--glass-bg);
+        backdrop-filter: blur(20px);
+        border-radius: 24px;
+        padding: 40px;
+        border: 2px solid var(--glass-border);
+        transition: all 0.4s;
+        cursor: pointer;
+        text-decoration: none;
+        display: block;
+    }
 
-        .cube:nth-child(1) { top: 10%; left: 10%; animation-duration: 20s; }
-        .cube:nth-child(2) { top: 60%; left: 70%; animation-duration: 30s; animation-delay: -5s; }
-        .cube:nth-child(3) { top: 30%; left: 80%; animation-duration: 22s; animation-delay: -10s; }
-        .cube:nth-child(4) { top: 70%; left: 20%; animation-duration: 28s; animation-delay: -15s; }
+    .tool-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3);
+    }
 
-        @keyframes rotateCube {
-            0% { transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
-            100% { transform: rotateX(360deg) rotateY(360deg) rotateZ(360deg); }
-        }
+    .tool-card.architect:hover {
+        border-color: var(--neon-blue);
+        box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3);
+    }
 
-        .cube-face {
-            position: absolute;
-            width: 150px;
-            height: 150px;
-            border: 2px solid;
-            border-image: linear-gradient(135deg, var(--neon-blue), var(--neon-purple), var(--neon-pink)) 1;
-            opacity: 0.4;
-        }
+    .tool-card.detective:hover {
+        border-color: var(--neon-purple);
+        box-shadow: 0 20px 60px rgba(181, 55, 242, 0.3);
+    }
 
-        .cube-face:nth-child(1) { transform: rotateY(0deg) translateZ(75px); }
-        .cube-face:nth-child(2) { transform: rotateY(90deg) translateZ(75px); }
-        .cube-face:nth-child(3) { transform: rotateY(180deg) translateZ(75px); }
-        .cube-face:nth-child(4) { transform: rotateY(-90deg) translateZ(75px); }
-        .cube-face:nth-child(5) { transform: rotateX(90deg) translateZ(75px); }
-        .cube-face:nth-child(6) { transform: rotateX(-90deg) translateZ(75px); }
+    .tool-card.oracle:hover {
+        border-color: var(--neon-pink);
+        box-shadow: 0 20px 60px rgba(255, 0, 110, 0.3);
+    }
 
-        /* Main Content */
-        .content-wrapper {
-            position: relative;
-            z-index: 1;
-        }
+    .tool-card.grader:hover {
+        border-color: var(--neon-green);
+        box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
+    }
 
-        .navbar {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
+    .tool-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+        display: block;
+    }
 
-        .navbar h1 {
-            font-size: 24px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+    .tool-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
 
-        .navbar .user-info {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-        }
+    .tool-desc {
+        color: var(--text-secondary);
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
 
-        .navbar a {
-            color: var(--text-primary);
-            text-decoration: none;
-            padding: 8px 16px;
-            border-radius: 8px;
-            transition: all 0.3s;
-            border: 1px solid var(--glass-border);
-        }
+    .tool-price {
+        font-size: 28px;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+</style>
+{% endblock %}
 
-        .navbar a:hover {
-            background: var(--glass-bg);
-            border-color: var(--neon-blue);
-        }
+{% block content %}
+<div class="container">
+    <h1 class="page-title">⚡ Control Center</h1>
 
-        .container {
-            max-width: 1400px;
-            margin: 40px auto;
-            padding: 0 40px;
-        }
+    <div class="tools-grid">
+        <a href="{{ url_for('tool_writer') }}" class="tool-card architect">
+            <span class="tool-icon">✍️</span>
+            <h3 class="tool-title">The Architect</h3>
+            <p class="tool-desc">AI Essay Writer with Citation Verification. Human-like style, no AI buzzwords, real academic sources.</p>
+            <div class="tool-price">£20 - £40</div>
+        </a>
 
-        .page-title {
-            font-size: 32px;
-            font-weight: 700;
-            text-align: center;
-            margin-bottom: 40px;
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple), var(--neon-pink));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+        <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective">
+            <span class="tool-icon">🔍</span>
+            <h3 class="tool-title">The Detective</h3>
+            <p class="tool-desc">3-Agent Plagiarism Team. Hunts sources, analyzes similarity, generates PDF report with verified links.</p>
+            <div class="tool-price">£10</div>
+        </a>
 
-        /* Control Center Grid */
-        .tools-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 30px;
-            margin-bottom: 50px;
-        }
+        <a href="{{ url_for('tool_detector') }}" class="tool-card oracle">
+            <span class="tool-icon">🔮</span>
+            <h3 class="tool-title">The Oracle</h3>
+            <p class="tool-desc">AI Content Detector. Identifies AI-generated text with detailed pattern analysis.</p>
+            <div class="tool-price">£10</div>
+        </a>
 
-        .tool-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            padding: 40px;
-            border: 2px solid var(--glass-border);
-            transition: all 0.4s;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .tool-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, transparent, rgba(0, 212, 255, 0.1));
-            opacity: 0;
-            transition: opacity 0.4s;
-        }
-
-        .tool-card:hover::before {
-            opacity: 1;
-        }
-
-        .tool-card:hover {
-            transform: translateY(-10px);
-            border-color: var(--neon-blue);
-            box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3);
-        }
-
-        .tool-card.architect:hover { border-color: var(--neon-blue); box-shadow: 0 20px 60px rgba(0, 212, 255, 0.3); }
-        .tool-card.detective:hover { border-color: var(--neon-purple); box-shadow: 0 20px 60px rgba(181, 55, 242, 0.3); }
-        .tool-card.oracle:hover { border-color: var(--neon-pink); box-shadow: 0 20px 60px rgba(255, 0, 110, 0.3); }
-        .tool-card.grader:hover { border-color: var(--neon-green); box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3); }
-
-        .tool-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-            display: block;
-        }
-
-        .tool-title {
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 10px;
-        }
-
-        .tool-desc {
-            color: var(--text-secondary);
-            margin-bottom: 20px;
-            line-height: 1.6;
-        }
-
-        .tool-price {
-            font-size: 28px;
-            font-weight: 700;
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 20px;
-        }
-
-        .btn-neon {
-            width: 100%;
-            padding: 16px;
-            background: rgba(0, 212, 255, 0.1);
-            border: 2px solid var(--neon-blue);
-            border-radius: 12px;
-            color: white;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s;
-        }
-
-        .btn-neon::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-            transform: skewX(-30deg);
-            transition: left 0.5s;
-            z-index: -1;
-        }
-
-        .btn-neon:hover::before {
-            left: 0;
-        }
-
-        .btn-neon:hover {
-            border-color: transparent;
-            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.5);
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.9);
-            backdrop-filter: blur(10px);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-            overflow-y: auto;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: var(--bg-light);
-            border-radius: 24px;
-            padding: 40px;
-            max-width: 800px;
-            width: 90%;
-            border: 2px solid var(--glass-border);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-        }
-
-        .modal-header h2 {
-            background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 28px;
-            cursor: pointer;
-            color: var(--text-secondary);
-            transition: color 0.3s;
-        }
-
-        .close-btn:hover {
-            color: var(--neon-pink);
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        select, textarea, input[type="file"] {
-            width: 100%;
-            padding: 15px;
-            background: var(--bg-deep);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            color: var(--text-primary);
-            font-size: 15px;
-            font-family: inherit;
-        }
-
-        textarea {
-            min-height: 200px;
-            resize: vertical;
-        }
-
-        select:focus, textarea:focus {
-            outline: none;
-            border-color: var(--neon-blue);
-            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
-        }
-
-        .upload-zone {
-            border: 2px dashed var(--glass-border);
-            border-radius: 16px;
-            padding: 40px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: rgba(0, 212, 255, 0.02);
-            margin-bottom: 20px;
-        }
-
-        .upload-zone:hover {
-            border-color: var(--neon-blue);
-            background: rgba(0, 212, 255, 0.05);
-        }
-
-        .log-console {
-            background: var(--bg-deep);
-            border-radius: 12px;
-            padding: 25px;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            max-height: 400px;
-            overflow-y: auto;
-            line-height: 1.8;
-            display: none;
-            border: 1px solid var(--glass-border);
-            margin-top: 20px;
-        }
-
-        .log-console.active {
-            display: block;
-        }
-
-        .log-entry {
-            margin-bottom: 8px;
-            opacity: 0;
-            animation: fadeIn 0.3s forwards;
-        }
-
-        @keyframes fadeIn {
-            to { opacity: 1; }
-        }
-
-        .log-entry.quill { color: var(--neon-blue); }
-        .log-entry.strict { color: var(--neon-purple); }
-        .log-entry.logic { color: var(--neon-pink); }
-        .log-entry.score { color: var(--neon-green); font-weight: bold; }
-
-        .result-box {
-            background: var(--glass-bg);
-            border-radius: 16px;
-            padding: 30px;
-            margin-top: 20px;
-            border: 1px solid var(--glass-border);
-            display: none;
-        }
-
-        .result-box.active {
-            display: block;
-        }
-
-        .history-section {
-            margin-top: 50px;
-        }
-
-        .history-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-
-        .history-card {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            padding: 25px;
-            border-radius: 16px;
-            border: 1px solid var(--glass-border);
-            transition: all 0.3s;
-        }
-
-        .history-card:hover {
-            transform: translateY(-5px);
-            border-color: var(--neon-blue);
-            box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3);
-        }
-
-        @media (max-width: 768px) {
-            .tools-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .container {
-                padding: 0 20px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <!-- 3D Cubes Background -->
-    <div class="cube-container">
-        <div class="cube">
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-        </div>
-        <div class="cube">
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-        </div>
-        <div class="cube">
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-        </div>
-        <div class="cube">
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-            <div class="cube-face"></div>
-        </div>
+        <a href="{{ url_for('tool_grader') }}" class="tool-card grader">
+            <span class="tool-icon">📊</span>
+            <h3 class="tool-title">The Grader</h3>
+            <p class="tool-desc">Strict Assignment Marking. All 3 professors grade against your brief with actionable feedback.</p>
+            <div class="tool-price">£15</div>
+        </a>
     </div>
-
-    <div class="content-wrapper">
-        <div class="navbar">
-            <h1>🎓 The Academic Board</h1>
-            <div class="user-info">
-                <span>{{ current_user.username }}</span>
-                <a href="{{ url_for('logout') }}">Logout</a>
-            </div>
-        </div>
-
-        <div class="container">
-            <h1 class="page-title">⚡ Control Center</h1>
-
-            <!-- Tools Grid -->
-            <div class="tools-grid">
-                <!-- The Architect -->
-                <div class="tool-card architect" onclick="openTool('architect')">
-                    <span class="tool-icon">✍️</span>
-                    <h3 class="tool-title">The Architect</h3>
-                    <p class="tool-desc">AI Essay Writer with Citation Verification. Human-like style, no AI buzzwords, real academic sources.</p>
-                    <div class="tool-price">£20 - £40</div>
-                    <button class="btn-neon">Launch Writer</button>
-                </div>
-
-                <!-- The Detective -->
-                <div class="tool-card detective" onclick="openTool('detective')">
-                    <span class="tool-icon">🔍</span>
-                    <h3 class="tool-title">The Detective</h3>
-                    <p class="tool-desc">Plagiarism Checker with web search. Generates PDF report with highlighted matches and sources.</p>
-                    <div class="tool-price">£10</div>
-                    <button class="btn-neon">Check Plagiarism</button>
-                </div>
-
-                <!-- The Oracle -->
-                <div class="tool-card oracle" onclick="openTool('oracle')">
-                    <span class="tool-icon">🔮</span>
-                    <h3 class="tool-title">The Oracle</h3>
-                    <p class="tool-desc">AI Content Detector. Identifies AI-generated text and provides detailed analysis.</p>
-                    <div class="tool-price">£10</div>
-                    <button class="btn-neon">Detect AI</button>
-                </div>
-
-                <!-- The Grader -->
-                <div class="tool-card grader" onclick="openTool('grader')">
-                    <span class="tool-icon">📊</span>
-                    <h3 class="tool-title">The Grader</h3>
-                    <p class="tool-desc">Strict Assignment Marking. All 3 professors grade against your brief with actionable feedback.</p>
-                    <div class="tool-price">£15</div>
-                    <button class="btn-neon">Grade Assignment</button>
-                </div>
-            </div>
-
-            <!-- History Section -->
-            {% if essays or reports %}
-            <div class="history-section">
-                <h2 class="page-title">📚 Recent Work</h2>
-                <div class="history-grid">
-                    {% for essay in essays %}
-                    <div class="history-card">
-                        <h3>{{ essay.title[:50] }}...</h3>
-                        <p style="color: var(--text-secondary); margin: 10px 0;">Score: {{ essay.final_score }}/100</p>
-                        <p style="color: var(--text-secondary); font-size: 13px;">{{ essay.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                        <a href="{{ url_for('download_essay', essay_id=essay.id) }}" class="btn-neon" style="display: inline-block; margin-top: 15px; text-decoration: none;">Download</a>
-                    </div>
-                    {% endfor %}
-                    
-                    {% for report in reports %}
-                    <div class="history-card">
-                        <h3>{{ report.title }}</h3>
-                        <p style="color: var(--text-secondary); margin: 10px 0;">Type: {{ report.tool_type }}</p>
-                        <p style="color: var(--text-secondary); font-size: 13px;">{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-                        {% if report.file_path %}
-                        <a href="{{ url_for('download_report', report_id=report.id) }}" class="btn-neon" style="display: inline-block; margin-top: 15px; text-decoration: none;">Download PDF</a>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Architect Modal -->
-    <div class="modal" id="architectModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>✍️ The Architect - Essay Writer</h2>
-                <button class="close-btn" onclick="closeModal('architectModal')">&times;</button>
-            </div>
-            <form id="architectForm">
-                <div class="form-group">
-                    <label>Word Count</label>
-                    <select id="wordCount" required>
-                        <option value="2000">Standard (2,000 words) - £20</option>
-                        <option value="4000">Extended (4,000 words) - £40</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Essay Instructions</label>
-                    <textarea id="instructions" placeholder="Enter your essay requirements..." required></textarea>
-                </div>
-                <button type="submit" class="btn-neon">Pay & Generate</button>
-            </form>
-            <div class="log-console" id="logConsole"></div>
-            <div class="result-box" id="resultBox">
-                <h3>✅ Essay Complete!</h3>
-                <p id="resultText"></p>
-                <button class="btn-neon" id="downloadEssayBtn">Download Word Document</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Detective Modal -->
-    <div class="modal" id="detectiveModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🔍 The Detective - Plagiarism Check</h2>
-                <button class="close-btn" onclick="closeModal('detectiveModal')">&times;</button>
-            </div>
-            <form id="detectiveForm">
-                <div class="upload-zone" id="uploadZone">
-                    <div style="font-size: 48px; margin-bottom: 15px;">📄</div>
-                    <div>Drag & Drop or Click to Upload</div>
-                    <input type="file" id="fileInput" accept=".pdf,.docx,.txt" style="display: none;">
-                </div>
-                <div class="form-group">
-                    <label>Or Paste Text</label>
-                    <textarea id="plagText" placeholder="Paste text to check..."></textarea>
-                </div>
-                <button type="submit" class="btn-neon">Pay £10 & Check</button>
-            </form>
-            <div class="result-box" id="detectiveResult"></div>
-        </div>
-    </div>
-
-    <!-- Oracle Modal -->
-    <div class="modal" id="oracleModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🔮 The Oracle - AI Detector</h2>
-                <button class="close-btn" onclick="closeModal('oracleModal')">&times;</button>
-            </div>
-            <form id="oracleForm">
-                <div class="form-group">
-                    <label>Text to Analyze</label>
-                    <textarea id="aiText" placeholder="Paste text to check for AI generation..." required></textarea>
-                </div>
-                <button type="submit" class="btn-neon">Pay £10 & Analyze</button>
-            </form>
-            <div class="result-box" id="oracleResult"></div>
-        </div>
-    </div>
-
-    <!-- Grader Modal -->
-    <div class="modal" id="graderModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>📊 The Grader - Assignment Marking</h2>
-                <button class="close-btn" onclick="closeModal('graderModal')">&times;</button>
-            </div>
-            <form id="graderForm">
-                <div class="form-group">
-                    <label>Assignment Brief</label>
-                    <textarea id="briefText" placeholder="Paste the assignment brief..." required></textarea>
-                </div>
-                <div class="form-group">
-                    <label>Student Essay</label>
-                    <textarea id="essayText" placeholder="Paste the student's essay..." required></textarea>
-                </div>
-                <button type="submit" class="btn-neon">Pay £15 & Grade</button>
-            </form>
-            <div class="result-box" id="graderResult"></div>
-        </div>
-    </div>
-
-    <script>
-        const stripe = Stripe('{{ config.get("STRIPE_PUBLISHABLE_KEY", "pk_test_51234567890") }}');
-        
-        function openTool(tool) {
-            document.getElementById(tool + 'Modal').classList.add('active');
-        }
-        
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-        
-        // Architect Form
-        document.getElementById('architectForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const wordCount = document.getElementById('wordCount').value;
-            const instructions = document.getElementById('instructions').value;
-            
-            const toolType = wordCount === '2000' ? 'essay_std' : 'essay_ext';
-            
-            sessionStorage.setItem('pending_essay', JSON.stringify({
-                instructions: instructions,
-                word_count: wordCount
-            }));
-            
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool_type: toolType,
-                        instructions: instructions,
-                        word_count: wordCount
-                    })
-                });
-                
-                const session = await response.json();
-                if (session.error) {
-                    alert('Error: ' + session.error);
-                    return;
-                }
-                
-                await stripe.redirectToCheckout({sessionId: session.id});
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        });
-        
-        // Detective Form
-        document.getElementById('detectiveForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const text = document.getElementById('plagText').value;
-            
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool_type: 'plagiarism',
-                        text: text
-                    })
-                });
-                
-                const session = await response.json();
-                await stripe.redirectToCheckout({sessionId: session.id});
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        });
-        
-        // Oracle Form
-        document.getElementById('oracleForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const text = document.getElementById('aiText').value;
-            
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool_type: 'ai_check',
-                        text: text
-                    })
-                });
-                
-                const session = await response.json();
-                await stripe.redirectToCheckout({sessionId: session.id});
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        });
-        
-        // Grader Form
-        document.getElementById('graderForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const brief = document.getElementById('briefText').value;
-            const essay = document.getElementById('essayText').value;
-            
-            try {
-                const response = await fetch('/create-checkout-session', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        tool_type: 'grader',
-                        brief: brief,
-                        essay: essay
-                    })
-                });
-                
-                const session = await response.json();
-                await stripe.redirectToCheckout({sessionId: session.id});
-            } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        });
-        
-        // File Upload
-        const uploadZone = document.getElementById('uploadZone');
-        const fileInput = document.getElementById('fileInput');
-        
-        uploadZone.addEventListener('click', () => fileInput.click());
-        
-        fileInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                const data = await response.json();
-                if (data.success) {
-                    document.getElementById('plagText').value = data.text;
-                }
-            }
-        });
-    </script>
-</body>
-</html>
+</div>
+{% endblock %}

@@ -2,6 +2,7 @@ import os
 import json
 import time
 import re
+import requests
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, Response, stream_with_context, jsonify, session, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -21,16 +22,14 @@ import PyPDF2
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.lib.units import inch
 
-# Load environment variables
 load_dotenv()
 
-# Initialize Flask app
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///ai_architect.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///academic_suite.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['REPORTS_FOLDER'] = 'reports'
@@ -39,31 +38,20 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['REPORTS_FOLDER'], exist_ok=True)
 
-# Initialize extensions
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Stripe configuration
 stripe_key = os.getenv('STRIPE_SECRET_KEY', '')
 if stripe_key:
     stripe.api_key = stripe_key
-    masked_key = stripe_key[:7] + '...' + stripe_key[-4:] if len(stripe_key) > 11 else '***'
-    print(f"✅ Stripe Key Loaded: {masked_key}")
+    print(f"✅ Stripe Key Loaded")
 else:
-    print("⚠️ WARNING: STRIPE_SECRET_KEY not found in .env")
+    print("⚠️ WARNING: STRIPE_SECRET_KEY not found")
 
 DOMAIN = os.getenv('DOMAIN', 'http://localhost:5000')
 
-# Configuration
-MAX_ROUNDS = 10
-SUCCESS_THRESHOLD = 90
-STAGNATION_THRESHOLD = 1.5
-HISTORY_PRUNING_START = 4
-ALLOWED_EXTENSIONS = {'pdf', 'docx', 'txt'}
-
-# Pricing tiers
 PRICING = {
     'essay_std': {'price': 2000, 'display': '£20', 'words': 2000},
     'essay_ext': {'price': 4000, 'display': '£40', 'words': 4000},
@@ -72,7 +60,6 @@ PRICING = {
     'grader': {'price': 1500, 'display': '£15'}
 }
 
-# Initialize AI clients
 anthropic_client = anthropic.Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
 openai.api_key = os.getenv('OPENAI_API_KEY')
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
@@ -86,6 +73,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     essays = db.relationship('Essay', backref='author', lazy=True)
     reports = db.relationship('Report', backref='author', lazy=True)
+    payments = db.relationship('Payment', backref='user', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -101,17 +89,24 @@ class Essay(db.Model):
     final_content = db.Column(db.Text, nullable=False)
     final_score = db.Column(db.Integer, nullable=False)
     rounds_used = db.Column(db.Integer, nullable=False)
-    stop_reason = db.Column(db.String(100), nullable=False)
-    word_count_limit = db.Column(db.Integer, nullable=False, default=2000)
+    word_count_limit = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Report(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    tool_type = db.Column(db.String(50), nullable=False)  # plagiarism, ai_check, grader
+    tool_type = db.Column(db.String(50), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     result_data = db.Column(db.Text, nullable=False)
     file_path = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Payment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    amount = db.Column(db.Integer, nullable=False)
+    tool_type = db.Column(db.String(50), nullable=False)
+    stripe_session_id = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
@@ -120,35 +115,16 @@ def load_user(user_id):
 
 # File handling
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'docx', 'txt'}
 
 def extract_text_from_pdf(file_path):
-    try:
-        with open(file_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-            return text.strip()
-    except Exception as e:
-        raise Exception(f"Error reading PDF: {str(e)}")
+    with open(file_path, 'rb') as file:
+        pdf_reader = PyPDF2.PdfReader(file)
+        return "\n".join([page.extract_text() for page in pdf_reader.pages]).strip()
 
 def extract_text_from_docx(file_path):
-    try:
-        doc = Document(file_path)
-        text = ""
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
-        return text.strip()
-    except Exception as e:
-        raise Exception(f"Error reading DOCX: {str(e)}")
-
-def extract_text_from_txt(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            return file.read().strip()
-    except Exception as e:
-        raise Exception(f"Error reading TXT: {str(e)}")
+    doc = Document(file_path)
+    return "\n".join([p.text for p in doc.paragraphs]).strip()
 
 def parse_uploaded_file(file_path, filename):
     ext = filename.rsplit('.', 1)[1].lower()
@@ -157,22 +133,21 @@ def parse_uploaded_file(file_path, filename):
     elif ext == 'docx':
         return extract_text_from_docx(file_path)
     elif ext == 'txt':
-        return extract_text_from_txt(file_path)
-    else:
-        raise Exception("Unsupported file type")
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    raise Exception("Unsupported file type")
 
 # AI Helper Functions
-def call_with_retry(func, max_retries=3, delay=2):
+def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
             return func()
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
-            time.sleep(delay * (attempt + 1))
-    return None
+            time.sleep(2 * (attempt + 1))
 
-def call_claude_writer(prompt, max_tokens=4000):
+def call_claude(prompt, max_tokens=4000):
     def api_call():
         response = anthropic_client.messages.create(
             model="claude-3-5-sonnet-20241022",
@@ -182,69 +157,110 @@ def call_claude_writer(prompt, max_tokens=4000):
         return response.content[0].text
     return call_with_retry(api_call)
 
-def call_gpt4_examiner(prompt):
+def call_gpt4(prompt, model="gpt-4o"):
     def api_call():
         response = openai.chat.completions.create(
-            model="gpt-4o",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
         return response.choices[0].message.content
     return call_with_retry(api_call)
 
-def call_gemini_reviewer(prompt):
+def call_gemini(prompt):
     def api_call():
         model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(prompt)
         return response.text
     return call_with_retry(api_call)
 
-def extract_score(examiner_response):
-    try:
-        matches = re.findall(r'\b(\d{1,3})\b', examiner_response)
-        for match in matches:
-            score = int(match)
-            if 0 <= score <= 100:
-                return score
-        return 0
-    except:
-        return 0
+def extract_score(text):
+    matches = re.findall(r'\b(\d{1,3})\b', text)
+    for match in matches:
+        score = int(match)
+        if 0 <= score <= 100:
+            return score
+    return 0
 
-# TOOL A: The Detective (Plagiarism Checker)
-def check_plagiarism_gemini(text):
-    """Use Gemini to check for plagiarism with web search"""
-    prompt = f"""You are a plagiarism detection expert. Analyze the following text for potential plagiarism by searching your knowledge base and web sources.
+def check_url_status(url):
+    """Check if URL is live (HTTP 200) or broken"""
+    try:
+        response = requests.head(url, timeout=5, allow_redirects=True)
+        return response.status_code == 200
+    except:
+        return False
+
+# TOOL A: The Detective - 3-Agent Plagiarism Team
+def plagiarism_hunter_gemini(text):
+    """Step 1: Gemini hunts for sources with web search"""
+    prompt = f"""You are The Hunter, a plagiarism detection expert with web search capabilities.
 
 TEXT TO ANALYZE:
 {text}
 
-For each suspicious passage:
-1. Identify the exact text that appears plagiarized
-2. Find the original source URL if available
-3. Calculate similarity percentage
+TASKS:
+1. Search the web for potential sources of this text
+2. Find matching passages
+3. Extract URLs of sources
+4. For each match, provide:
+   - The suspicious passage
+   - The source URL
+   - Similarity percentage (0-100)
 
-Return your findings in this JSON format:
+Return JSON format:
 {{
-    "overall_plagiarism_score": 0-100,
     "matches": [
         {{
-            "text": "suspicious passage",
-            "source": "URL or source name",
-            "similarity": 0-100
+            "passage": "suspicious text",
+            "source_url": "https://...",
+            "similarity": 85
         }}
-    ],
-    "verdict": "ORIGINAL/SUSPICIOUS/PLAGIARIZED"
+    ]
 }}"""
-
+    
     try:
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        response = model.generate_content(prompt)
-        return response.text
+        result = call_gemini(prompt)
+        return result
     except Exception as e:
-        return json.dumps({"error": str(e), "overall_plagiarism_score": 0, "matches": [], "verdict": "ERROR"})
+        return json.dumps({"matches": [], "error": str(e)})
 
-def generate_plagiarism_pdf(text, analysis_result, user_id):
-    """Generate PDF report for plagiarism check"""
+def plagiarism_analyst_gpt(student_text, hunter_findings):
+    """Step 2: GPT-4o analyzes similarity and paraphrasing"""
+    prompt = f"""You are The Analyst, an expert in detecting plagiarism and paraphrasing.
+
+STUDENT TEXT:
+{student_text}
+
+SOURCES FOUND BY HUNTER:
+{hunter_findings}
+
+TASKS:
+1. Compare student text with each source
+2. Detect direct copying vs paraphrasing
+3. Assign "Suspicion Score" (0-100) for each match
+4. Identify specific sentences that are problematic
+
+Return JSON:
+{{
+    "overall_suspicion": 0-100,
+    "analysis": [
+        {{
+            "student_sentence": "...",
+            "source_sentence": "...",
+            "suspicion_score": 0-100,
+            "type": "DIRECT_COPY/PARAPHRASED/SIMILAR"
+        }}
+    ]
+}}"""
+    
+    try:
+        result = call_gpt4(prompt)
+        return result
+    except Exception as e:
+        return json.dumps({"overall_suspicion": 0, "analysis": [], "error": str(e)})
+
+def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id):
+    """Step 3: Claude generates PDF report with highlighted text"""
     filename = f"plagiarism_report_{user_id}_{int(time.time())}.pdf"
     filepath = os.path.join(app.config['REPORTS_FOLDER'], filename)
     
@@ -253,7 +269,8 @@ def generate_plagiarism_pdf(text, analysis_result, user_id):
     story = []
     
     # Title
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, textColor=colors.HexColor('#b537f2'))
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], 
+                                 fontSize=24, textColor=colors.HexColor('#b537f2'))
     story.append(Paragraph("🔍 The Detective - Plagiarism Report", title_style))
     story.append(Spacer(1, 0.3*inch))
     
@@ -261,316 +278,178 @@ def generate_plagiarism_pdf(text, analysis_result, user_id):
     story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 0.2*inch))
     
-    # Analysis Result
+    # Parse findings
     try:
-        result = json.loads(analysis_result)
-        score = result.get('overall_plagiarism_score', 0)
-        verdict = result.get('verdict', 'UNKNOWN')
+        hunter_json = json.loads(hunter_data)
+        analyst_json = json.loads(analyst_data)
         
-        verdict_style = ParagraphStyle('Verdict', parent=styles['Heading2'], 
-                                      textColor=colors.red if score > 30 else colors.green)
-        story.append(Paragraph(f"Verdict: {verdict} ({score}% match)", verdict_style))
+        overall_score = analyst_json.get('overall_suspicion', 0)
+        verdict_color = colors.red if overall_score > 30 else colors.green
+        
+        verdict_style = ParagraphStyle('Verdict', parent=styles['Heading2'], textColor=verdict_color)
+        story.append(Paragraph(f"Overall Suspicion: {overall_score}%", verdict_style))
         story.append(Spacer(1, 0.2*inch))
         
-        # Matches
-        matches = result.get('matches', [])
-        if matches:
-            story.append(Paragraph("<b>Suspicious Passages:</b>", styles['Heading3']))
-            story.append(Spacer(1, 0.1*inch))
+        # Suspicious passages
+        story.append(Paragraph("<b>Suspicious Passages:</b>", styles['Heading3']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        for i, analysis in enumerate(analyst_json.get('analysis', [])[:10], 1):
+            student_sent = analysis.get('student_sentence', 'N/A')
+            suspicion = analysis.get('suspicion_score', 0)
+            match_type = analysis.get('type', 'UNKNOWN')
             
-            for i, match in enumerate(matches, 1):
-                match_text = match.get('text', 'N/A')
-                source = match.get('source', 'Unknown')
-                similarity = match.get('similarity', 0)
-                
-                story.append(Paragraph(f"<b>Match {i} ({similarity}% similar):</b>", styles['Normal']))
-                story.append(Paragraph(f'"{match_text}"', styles['Italic']))
-                story.append(Paragraph(f"<b>Source:</b> {source}", styles['Normal']))
-                story.append(Spacer(1, 0.15*inch))
-    except:
-        story.append(Paragraph("Analysis result format error", styles['Normal']))
-    
-    # Original Text
-    story.append(PageBreak())
-    story.append(Paragraph("<b>Original Text Analyzed:</b>", styles['Heading3']))
-    story.append(Spacer(1, 0.1*inch))
-    story.append(Paragraph(text[:2000] + "..." if len(text) > 2000 else text, styles['Normal']))
+            # Highlight in yellow for high suspicion
+            if suspicion > 50:
+                highlight_style = ParagraphStyle('Highlight', parent=styles['Normal'],
+                                                backColor=colors.yellow)
+                story.append(Paragraph(f"<b>Match {i} ({suspicion}% - {match_type}):</b>", styles['Normal']))
+                story.append(Paragraph(f'"{student_sent}"', highlight_style))
+            else:
+                story.append(Paragraph(f"<b>Match {i} ({suspicion}% - {match_type}):</b>", styles['Normal']))
+                story.append(Paragraph(f'"{student_sent}"', styles['Italic']))
+            
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Reference Status Table
+        story.append(PageBreak())
+        story.append(Paragraph("<b>Reference Status:</b>", styles['Heading3']))
+        story.append(Spacer(1, 0.1*inch))
+        
+        table_data = [['Source URL', 'Status']]
+        for match in hunter_json.get('matches', [])[:15]:
+            url = match.get('source_url', 'N/A')
+            is_live = check_url_status(url)
+            status = '✓ Live' if is_live else '✗ Broken'
+            table_data.append([url[:60] + '...' if len(url) > 60 else url, status])
+        
+        table = Table(table_data, colWidths=[4*inch, 1.5*inch])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(table)
+        
+    except Exception as e:
+        story.append(Paragraph(f"Error parsing results: {str(e)}", styles['Normal']))
     
     doc.build(story)
     return filename
 
-# TOOL B: The Oracle (AI Detection)
-def check_ai_content(text):
-    """Use GPT-4 to detect AI-generated content"""
-    prompt = f"""You are an AI content detection expert. Analyze the following text to determine if it was written by AI or a human.
-
-TEXT TO ANALYZE:
-{text}
-
-Look for AI indicators:
-- Repetitive phrasing patterns
-- Overly formal or perfect grammar
-- Lack of personal voice
-- Generic transitions
-- AI buzzwords (delve, tapestry, multifaceted, landscape, etc.)
-
-Return JSON format:
-{{
-    "ai_probability": 0-100,
-    "indicators": ["list of specific AI indicators found"],
-    "verdict": "HUMAN/LIKELY_HUMAN/UNCERTAIN/LIKELY_AI/AI",
-    "explanation": "brief explanation"
-}}"""
-
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return json.dumps({"error": str(e), "ai_probability": 0, "verdict": "ERROR"})
-
-# TOOL C: The Grader (Strict Marking)
-def grade_assignment(brief_text, essay_text):
-    """Grade assignment using all 3 professors"""
+# TOOL B: The Architect - Essay Writer with Citation Verification
+def generate_essay_stream(instructions, word_count):
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening ({word_count} words)...'})}\n\n"
     
-    # Prof. Quill - Content Analysis
-    quill_prompt = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
-
-ASSIGNMENT BRIEF:
-{brief_text}
-
-STUDENT ESSAY:
-{essay_text}
-
-Evaluate:
-1. How well does it address the brief?
-2. Content quality and depth
-3. Structure and organization
-
-Provide a score (0-100) and detailed feedback."""
-
-    # Dr. Strict - Technical Grading
-    strict_prompt = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly.
-
-ASSIGNMENT BRIEF:
-{brief_text}
-
-STUDENT ESSAY:
-{essay_text}
-
-Evaluate:
-1. Grammar and writing quality
-2. Citation and referencing
-3. Academic rigor
-
-Provide a score (0-100) and identify specific weaknesses."""
-
-    # Dean Logic - Overall Assessment
-    logic_prompt = f"""You are Dean Logic, the final academic authority. Provide an overall assessment.
-
-ASSIGNMENT BRIEF:
-{brief_text}
-
-STUDENT ESSAY:
-{essay_text}
-
-Provide:
-1. Overall score (0-100)
-2. Key strengths
-3. Critical improvements needed"""
-
-    try:
-        quill_response = call_claude_writer(quill_prompt)
-        quill_score = extract_score(quill_response)
-        
-        strict_response = call_gpt4_examiner(strict_prompt)
-        strict_score = extract_score(strict_response)
-        
-        logic_response = call_gemini_reviewer(logic_prompt)
-        logic_score = extract_score(logic_response)
-        
-        average_score = round((quill_score + strict_score + logic_score) / 3)
-        
-        result = {
-            "average_score": average_score,
-            "quill_score": quill_score,
-            "quill_feedback": quill_response,
-            "strict_score": strict_score,
-            "strict_feedback": strict_response,
-            "logic_score": logic_score,
-            "logic_feedback": logic_response
-        }
-        
-        return json.dumps(result)
-    except Exception as e:
-        return json.dumps({"error": str(e), "average_score": 0})
-
-# TOOL D: The Architect (Essay Writer with Citation Verification)
-def generate_essay_with_citations_stream(instructions, word_count_limit):
-    """Essay generation with citation verification"""
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening (Target: {word_count_limit} words)...', 'professor': 'system'})}\n\n"
+    # Initial draft
+    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (human-like style)...'})}\n\n"
     
-    # Initial Draft
-    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting (Human-like style)...', 'professor': 'quill'})}\n\n"
-    
-    writer_prompt = f"""You are Prof. Quill, a human ghostwriter. Write naturally like a real person, NOT an AI.
+    writer_prompt = f"""You are Prof. Quill, a human ghostwriter. Write naturally.
 
-CRITICAL STYLE RULES:
-- NEVER use AI buzzwords: delve, tapestry, multifaceted, landscape, realm, etc.
-- Vary sentence length (mix short and long)
+STYLE RULES:
+- NO AI buzzwords: delve, tapestry, multifaceted, landscape, realm
+- Vary sentence length
 - Use contractions occasionally
-- Include minor stylistic imperfections
-- Write with a personal, authentic voice
+- Minor stylistic imperfections
+- Personal voice
 
-CONTENT REQUIREMENTS:
-- Target: {word_count_limit} words
-- Include REAL academic citations (Harvard/APA format)
-- Every major claim needs a citation
-- Use actual published papers (author, year, title)
+CONTENT:
+- Target: {word_count} words
+- Include REAL academic citations (Harvard/APA)
+- Every claim needs citation
 
 INSTRUCTIONS:
-{instructions}
-
-Write a comprehensive, well-researched essay with proper citations."""
+{instructions}"""
 
     try:
-        current_draft = call_claude_writer(writer_prompt)
-        yield f"data: {json.dumps({'type': 'log', 'message': '✅ Initial draft complete', 'professor': 'quill'})}\n\n"
+        current_draft = call_claude(writer_prompt)
+        yield f"data: {json.dumps({'type': 'log', 'message': '✅ Initial draft complete'})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'❌ Error: {str(e)}', 'professor': 'quill'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
     scores = []
     best_draft = current_draft
     best_score = 0
-    stop_reason = ""
 
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🔄 Starting refinement (Max {MAX_ROUNDS} rounds)...', 'professor': 'system'})}\n\n"
-    
-    for round_num in range(1, MAX_ROUNDS + 1):
-        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ Round {round_num}/{MAX_ROUNDS} ━━━', 'professor': 'system'})}\n\n"
+    for round_num in range(1, 6):
+        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ Round {round_num}/5 ━━━'})}\n\n"
         
         # Dr. Strict grades
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Dr. Strict grading...', 'professor': 'strict'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎯 Dr. Strict grading...'})}\n\n"
         
-        examiner_prompt = f"""Grade this essay (0-100). Check quality, structure, and citations.
-
-INSTRUCTIONS: {instructions}
-ESSAY: {current_draft}
-
-Score format: "Score: [number]" """
-
+        examiner_prompt = f"Grade this essay (0-100).\n\nINSTRUCTIONS: {instructions}\nESSAY: {current_draft}\n\nScore format: 'Score: [number]'"
+        
         try:
-            examiner_response = call_gpt4_examiner(examiner_prompt)
+            examiner_response = call_gpt4(examiner_prompt)
             score = extract_score(examiner_response)
             scores.append(score)
             
-            yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': score, 'professor': 'strict'})}\n\n"
-            
+            yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': score})}\n\n"
             verdict_msg = f"📊 Dr. Strict's verdict: {score}/100"
-            yield f"data: {json.dumps({'type': 'log', 'message': verdict_msg, 'professor': 'strict'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': verdict_msg})}\n\n"
             
             if score > best_score:
                 best_score = score
                 best_draft = current_draft
-                
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Error: {str(e)}', 'professor': 'strict'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'Error: {str(e)}'})}\n\n"
             score = 0
             scores.append(0)
 
-        if score >= SUCCESS_THRESHOLD:
-            stop_reason = f"SUCCESS: Score {score} >= {SUCCESS_THRESHOLD}"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 {stop_reason}!', 'professor': 'system'})}\n\n"
+        if score >= 90:
+            yield f"data: {json.dumps({'type': 'log', 'message': '🎉 SUCCESS! High score achieved.'})}\n\n"
             break
 
-        # CITATION VERIFICATION by Dean Logic (Gemini)
-        yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Dean Logic verifying citations...', 'professor': 'logic'})}\n\n"
+        # Citation verification
+        yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Dean Logic verifying citations...'})}\n\n"
         
-        citation_check_prompt = f"""You are Dean Logic, citation verification expert. Analyze ALL citations in this essay.
+        citation_prompt = f"""Verify ALL citations in this essay. Check if papers exist.
 
-ESSAY:
-{current_draft}
+ESSAY: {current_draft}
 
-For EACH citation found:
-1. Extract the full citation
-2. Search your knowledge base to verify if the paper/source EXISTS
-3. Check if it's relevant to the claim
-4. Mark as: VERIFIED / SUSPICIOUS / FAKE / DEAD_LINK
+For each citation:
+1. Extract full citation
+2. Verify if paper exists
+3. Check relevance
+4. Mark: VERIFIED / SUSPICIOUS / FAKE
 
-Return JSON:
-{{
-    "citations_found": [
-        {{
-            "citation": "full citation text",
-            "status": "VERIFIED/SUSPICIOUS/FAKE",
-            "reason": "why"
-        }}
-    ],
-    "fake_count": 0,
-    "feedback": "overall citation quality feedback"
-}}
-
-CRITICAL: If ANY citation is FAKE or SUSPICIOUS, it MUST be replaced."""
+Return JSON with fake_count."""
 
         try:
-            citation_response = call_gemini_reviewer(citation_check_prompt)
-            yield f"data: {json.dumps({'type': 'log', 'message': '📋 Citation audit complete', 'professor': 'logic'})}\n\n"
-            
-            # Check for fake citations
+            citation_response = call_gemini(citation_prompt)
             if "FAKE" in citation_response or "SUSPICIOUS" in citation_response:
-                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Fake citations detected! Requesting replacement...', 'professor': 'logic'})}\n\n"
-        except Exception as e:
-            citation_response = f"Citation check error: {str(e)}"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Citation check error', 'professor': 'logic'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Fake citations detected!'})}\n\n"
+        except:
+            citation_response = "Citation check error"
 
-        if round_num >= 3:
-            recent_scores = scores[-2:]
-            if len(recent_scores) == 2:
-                improvement = recent_scores[-1] - recent_scores[-2]
-                if improvement < STAGNATION_THRESHOLD:
-                    stop_reason = f"STAGNATION: Improvement {improvement:.1f} < {STAGNATION_THRESHOLD}"
-                    yield f"data: {json.dumps({'type': 'log', 'message': f'⏸️ {stop_reason}', 'professor': 'system'})}\n\n"
-                    break
-
-        if round_num == MAX_ROUNDS:
-            stop_reason = f"LIMIT: Max {MAX_ROUNDS} rounds"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🛑 {stop_reason}', 'professor': 'system'})}\n\n"
-            break
-
-        # Prof. Quill revises
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising...', 'professor': 'quill'})}\n\n"
+        # Revise
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising...'})}\n\n"
         
-        refine_prompt = f"""Revise the essay based on feedback. CRITICAL: Replace any fake/suspicious citations with REAL ones.
+        refine_prompt = f"""Revise based on feedback. Replace fake citations.
 
-ORIGINAL INSTRUCTIONS: {instructions}
-CURRENT DRAFT: {current_draft}
-EXAMINER FEEDBACK: {examiner_response}
-CITATION AUDIT: {citation_response}
+INSTRUCTIONS: {instructions}
+CURRENT: {current_draft}
+FEEDBACK: {examiner_response}
+CITATIONS: {citation_response}
 
-RULES:
-- Maintain human-like writing (NO AI buzzwords)
-- Replace ALL fake citations with verified sources
-- Target {word_count_limit} words
-- Aim for score > {SUCCESS_THRESHOLD}"""
+Target {word_count} words. No AI buzzwords."""
 
         try:
-            current_draft = call_claude_writer(refine_prompt)
-            yield f"data: {json.dumps({'type': 'log', 'message': '✅ Revision complete', 'professor': 'quill'})}\n\n"
+            current_draft = call_claude(refine_prompt)
+            yield f"data: {json.dumps({'type': 'log', 'message': '✅ Revision complete'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ Error: {str(e)}', 'professor': 'quill'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
             break
 
-    if not stop_reason:
-        stop_reason = "COMPLETED"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Complete! Best: {best_score}/100'})}\n\n"
     
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Complete! {stop_reason}', 'professor': 'system'})}\n\n"
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏆 Best Score: {best_score}/100 | Rounds: {len(scores)}', 'professor': 'system'})}\n\n"
-    
-    # Save to database
+    # Save
     try:
         essay = Essay(
             user_id=current_user.id,
@@ -579,15 +458,14 @@ RULES:
             final_content=best_draft,
             final_score=best_score,
             rounds_used=len(scores),
-            stop_reason=stop_reason,
-            word_count_limit=word_count_limit
+            word_count_limit=word_count
         )
         db.session.add(essay)
         db.session.commit()
         
-        yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': best_score, 'rounds': len(scores)})}\n\n"
+        yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': best_score})}\n\n"
     except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(e)}', 'professor': 'system'})}\n\n"
+        yield f"data: {json.dumps({'type': 'error', 'message': f'DB error: {str(e)}'})}\n\n"
 
 # Routes
 @app.route('/')
@@ -608,10 +486,8 @@ def login():
         
         if user and user.check_password(password):
             login_user(user)
-            flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
-        else:
-            flash('Invalid credentials', 'error')
+        flash('Invalid credentials', 'error')
     
     return render_template('login.html')
 
@@ -629,10 +505,6 @@ def register():
             flash('Username exists', 'error')
             return redirect(url_for('register'))
         
-        if User.query.filter_by(email=email).first():
-            flash('Email registered', 'error')
-            return redirect(url_for('register'))
-        
         user = User(username=username, email=email)
         user.set_password(password)
         db.session.add(user)
@@ -647,15 +519,84 @@ def register():
 @login_required
 def logout():
     logout_user()
-    flash('Logged out', 'success')
     return redirect(url_for('login'))
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    essays = Essay.query.filter_by(user_id=current_user.id).order_by(Essay.created_at.desc()).limit(10).all()
-    reports = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).limit(10).all()
-    return render_template('dashboard.html', essays=essays, reports=reports, user=current_user)
+    return render_template('dashboard.html', user=current_user)
+
+@app.route('/tools/writer')
+@login_required
+def tool_writer():
+    return render_template('tool_writer.html', user=current_user)
+
+@app.route('/tools/plagiarism')
+@login_required
+def tool_plagiarism():
+    return render_template('tool_plagiarism.html', user=current_user)
+
+@app.route('/tools/detector')
+@login_required
+def tool_detector():
+    return render_template('tool_detector.html', user=current_user)
+
+@app.route('/tools/grader')
+@login_required
+def tool_grader():
+    return render_template('tool_grader.html', user=current_user)
+
+@app.route('/billing')
+@login_required
+def billing():
+    payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.created_at.desc()).all()
+    return render_template('billing.html', payments=payments, user=current_user)
+
+@app.route('/my-essays')
+@login_required
+def my_essays():
+    essays = Essay.query.filter_by(user_id=current_user.id).order_by(Essay.created_at.desc()).all()
+    return render_template('my_essays.html', essays=essays, user=current_user)
+
+# API Routes
+@app.route('/api/support', methods=['POST'])
+@login_required
+def support_chat():
+    """The Concierge - AI Support Bot"""
+    data = request.get_json()
+    user_message = data.get('message', '')
+    
+    system_prompt = """You are The Concierge, the helpful support agent for The Academic Board.
+
+PRICING:
+- Essay Writer: £20 (2000 words) or £40 (4000 words)
+- Plagiarism Check: £10
+- AI Detector: £10
+- Assignment Grader: £15
+
+TOOLS:
+- The Architect: AI essay writer with citation verification
+- The Detective: Plagiarism checker with PDF reports
+- The Oracle: AI content detector
+- The Grader: Strict assignment marking
+
+Be polite, concise, and helpful. Troubleshoot errors and explain features."""
+    
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        bot_reply = response.choices[0].message.content
+        return jsonify({'reply': bot_reply})
+    except Exception as e:
+        return jsonify({'reply': f'Sorry, I encountered an error: {str(e)}'}), 500
 
 @app.route('/upload', methods=['POST'])
 @login_required
@@ -664,21 +605,18 @@ def upload_file():
         return jsonify({'error': 'No file'}), 400
     
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
+    if not file.filename or not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file'}), 400
     
     try:
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        extracted_text = parse_uploaded_file(filepath, filename)
+        text = parse_uploaded_file(filepath, filename)
         os.remove(filepath)
         
-        return jsonify({'success': True, 'text': extracted_text})
+        return jsonify({'success': True, 'text': text})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -693,18 +631,13 @@ def create_checkout_session():
             return jsonify({'error': 'Invalid tool'}), 400
         
         pricing = PRICING[tool_type]
-        
-        # Store pending task
-        session['pending_task'] = {
-            'tool_type': tool_type,
-            'data': data
-        }
+        session['pending_task'] = {'tool_type': tool_type, 'data': data}
         
         product_names = {
-            'essay_std': 'Essay Writing (Standard - 2000 words)',
-            'essay_ext': 'Essay Writing (Extended - 4000 words)',
+            'essay_std': 'Essay Writing (2000 words)',
+            'essay_ext': 'Essay Writing (4000 words)',
             'plagiarism': 'Plagiarism Check',
-            'ai_check': 'AI Content Detection',
+            'ai_check': 'AI Detection',
             'grader': 'Assignment Grading'
         }
         
@@ -714,10 +647,7 @@ def create_checkout_session():
                 'price_data': {
                     'currency': 'gbp',
                     'unit_amount': pricing['price'],
-                    'product_data': {
-                        'name': product_names.get(tool_type, 'Academic Tool'),
-                        'description': f'The Academic Board - {product_names.get(tool_type)}',
-                    },
+                    'product_data': {'name': product_names.get(tool_type, 'Academic Tool')},
                 },
                 'quantity': 1,
             }],
@@ -731,7 +661,6 @@ def create_checkout_session():
         
         return jsonify({'id': checkout_session.id})
     except Exception as e:
-        print(f"❌ Stripe Error: {str(e)}")
         return jsonify({'error': str(e)}), 403
 
 @app.route('/payment-success')
@@ -745,16 +674,32 @@ def payment_success():
             checkout_session = stripe.checkout.Session.retrieve(session_id)
             
             if checkout_session.payment_status == 'paid':
+                # Record payment
+                payment = Payment(
+                    user_id=current_user.id,
+                    amount=checkout_session.amount_total,
+                    tool_type=tool_type,
+                    stripe_session_id=session_id
+                )
+                db.session.add(payment)
+                db.session.commit()
+                
                 flash('Payment successful!', 'success')
-                return redirect(url_for('dashboard') + f'?start_tool={tool_type}')
-            else:
-                flash('Payment failed', 'error')
+                
+                # Redirect to appropriate tool
+                tool_routes = {
+                    'essay_std': 'tool_writer',
+                    'essay_ext': 'tool_writer',
+                    'plagiarism': 'tool_plagiarism',
+                    'ai_check': 'tool_detector',
+                    'grader': 'tool_grader'
+                }
+                return redirect(url_for(tool_routes.get(tool_type, 'dashboard')) + '?paid=true')
         except Exception as e:
             flash(f'Error: {str(e)}', 'error')
     
     return redirect(url_for('dashboard'))
 
-# Tool-specific generation routes
 @app.route('/generate-essay', methods=['POST'])
 @login_required
 def generate_essay():
@@ -765,9 +710,9 @@ def generate_essay():
         return jsonify({'error': 'Instructions required'}), 400
     
     return Response(
-        stream_with_context(generate_essay_with_citations_stream(instructions, word_count)),
+        stream_with_context(generate_essay_stream(instructions, word_count)),
         mimetype='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
+        headers={'Cache-Control': 'no-cache'}
     )
 
 @app.route('/check-plagiarism', methods=['POST'])
@@ -779,14 +724,21 @@ def check_plagiarism():
         return jsonify({'error': 'Text required'}), 400
     
     try:
-        analysis = check_plagiarism_gemini(text)
-        pdf_filename = generate_plagiarism_pdf(text, analysis, current_user.id)
+        # Step 1: Hunter (Gemini)
+        hunter_findings = plagiarism_hunter_gemini(text)
         
+        # Step 2: Analyst (GPT-4o)
+        analyst_findings = plagiarism_analyst_gpt(text, hunter_findings)
+        
+        # Step 3: Reporter (Claude) - Generate PDF
+        pdf_filename = plagiarism_reporter_claude(text, hunter_findings, analyst_findings, current_user.id)
+        
+        # Save report
         report = Report(
             user_id=current_user.id,
             tool_type='plagiarism',
             title='Plagiarism Check',
-            result_data=analysis,
+            result_data=analyst_findings,
             file_path=pdf_filename
         )
         db.session.add(report)
@@ -795,65 +747,7 @@ def check_plagiarism():
         return jsonify({
             'success': True,
             'report_id': report.id,
-            'analysis': analysis,
             'pdf_url': f'/download-report/{report.id}'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/check-ai', methods=['POST'])
-@login_required
-def check_ai():
-    text = request.form.get('text')
-    
-    if not text:
-        return jsonify({'error': 'Text required'}), 400
-    
-    try:
-        analysis = check_ai_content(text)
-        
-        report = Report(
-            user_id=current_user.id,
-            tool_type='ai_check',
-            title='AI Detection',
-            result_data=analysis
-        )
-        db.session.add(report)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'report_id': report.id,
-            'analysis': analysis
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/grade-assignment', methods=['POST'])
-@login_required
-def grade_assignment_route():
-    brief = request.form.get('brief')
-    essay = request.form.get('essay')
-    
-    if not brief or not essay:
-        return jsonify({'error': 'Both brief and essay required'}), 400
-    
-    try:
-        grading = grade_assignment(brief, essay)
-        
-        report = Report(
-            user_id=current_user.id,
-            tool_type='grader',
-            title='Assignment Grading',
-            result_data=grading
-        )
-        db.session.add(report)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'report_id': report.id,
-            'grading': grading
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -870,8 +764,8 @@ def download_report(report_id):
     if report.file_path:
         filepath = os.path.join(app.config['REPORTS_FOLDER'], report.file_path)
         return send_file(filepath, as_attachment=True)
-    else:
-        return jsonify({'error': 'No file available'}), 404
+    
+    return jsonify({'error': 'No file'}), 404
 
 @app.route('/download-essay/<int:essay_id>')
 @login_required
@@ -888,13 +782,7 @@ def download_essay(essay_id):
     
     doc.add_paragraph(f"Generated: {essay.created_at.strftime('%Y-%m-%d %H:%M')}")
     doc.add_paragraph(f"Score: {essay.final_score}/100")
-    doc.add_paragraph(f"Rounds: {essay.rounds_used}")
     doc.add_paragraph("")
-    
-    doc.add_heading('Instructions', 1)
-    doc.add_paragraph(essay.instructions)
-    doc.add_paragraph("")
-    
     doc.add_heading('Essay', 1)
     doc.add_paragraph(essay.final_content)
     
