@@ -10,11 +10,6 @@
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    body {
-        background: #050505;
-        overflow-x: hidden;
-    }
-
     .page-title {
         font-size: 48px;
         font-weight: 800;
@@ -33,7 +28,6 @@
         gap: 20px;
         max-width: 1400px;
         margin: 0 auto;
-        padding: 0 40px;
     }
 
     /* The Architect - Flagship Tool (Large Card) */
@@ -184,6 +178,24 @@
         font-size: 38px;
     }
 
+    .tool-card.detective .tool-price {
+        background: linear-gradient(135deg, var(--neon-purple), var(--neon-pink));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .tool-card.oracle .tool-price {
+        background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .tool-card.grader .tool-price {
+        background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
     .tool-badge {
         position: absolute;
         top: 20px;
@@ -229,7 +241,6 @@
         .bento-grid {
             grid-template-columns: 1fr;
             gap: 15px;
-            padding: 0 20px;
         }
 
         .tool-card.architect,
@@ -265,65 +276,49 @@
             font-size: 32px;
         }
     }
-
-    /* Ambient background glow */
-    .container::before {
-        content: '';
-        position: fixed;
-        top: -50%;
-        left: -50%;
-        width: 200%;
-        height: 200%;
-        background: radial-gradient(circle at 30% 50%, rgba(0, 212, 255, 0.03), transparent 50%),
-                    radial-gradient(circle at 70% 50%, rgba(181, 55, 242, 0.03), transparent 50%);
-        pointer-events: none;
-        z-index: -1;
-    }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1 class="page-title">⚡ Control Center</h1>
+<h1 class="page-title">⚡ Control Center</h1>
 
-    <div class="bento-grid">
-        <a href="{{ url_for('tool_writer') }}" class="tool-card architect" data-tilt data-tilt-max="5" data-tilt-speed="400" data-tilt-perspective="1000">
-            <div class="tool-badge">Flagship</div>
-            <div>
-                <span class="tool-icon">✍️</span>
-                <h3 class="tool-title">The Architect</h3>
-                <p class="tool-desc">AI Essay Writer with dynamic pricing and citation verification. Human-like style, no AI buzzwords, real academic sources. Powered by 3-agent refinement system.</p>
-            </div>
-            <div class="tool-price">£10 - £120</div>
-        </a>
+<div class="bento-grid">
+    <a href="{{ url_for('tool_writer') }}" class="tool-card architect" data-tilt data-tilt-max="5" data-tilt-speed="400" data-tilt-perspective="1000">
+        <div class="tool-badge">Flagship</div>
+        <div>
+            <span class="tool-icon">✍️</span>
+            <h3 class="tool-title">The Architect</h3>
+            <p class="tool-desc">AI Essay Writer with dynamic pricing and citation verification. Human-like style, no AI buzzwords, real academic sources. Powered by 3-agent refinement system.</p>
+        </div>
+        <div class="tool-price">£10 - £120</div>
+    </a>
 
-        <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-            <div>
-                <span class="tool-icon">🔍</span>
-                <h3 class="tool-title">The Detective</h3>
-                <p class="tool-desc">3-Agent plagiarism team hunts sources, analyzes similarity, generates PDF report with verified links.</p>
-            </div>
-            <div class="tool-price">£10</div>
-        </a>
+    <a href="{{ url_for('tool_plagiarism') }}" class="tool-card detective" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+        <div>
+            <span class="tool-icon">🔍</span>
+            <h3 class="tool-title">The Detective</h3>
+            <p class="tool-desc">3-Agent plagiarism team hunts sources, analyzes similarity, generates PDF report with verified links.</p>
+        </div>
+        <div class="tool-price">£10</div>
+    </a>
 
-        <a href="{{ url_for('tool_detector') }}" class="tool-card oracle" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-            <div>
-                <span class="tool-icon">🔮</span>
-                <h3 class="tool-title">The Oracle</h3>
-                <p class="tool-desc">AI content detector identifies AI-generated text with detailed pattern analysis and probability scoring.</p>
-            </div>
-            <div class="tool-price">£10</div>
-        </a>
+    <a href="{{ url_for('tool_detector') }}" class="tool-card oracle" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+        <div>
+            <span class="tool-icon">🔮</span>
+            <h3 class="tool-title">The Oracle</h3>
+            <p class="tool-desc">AI content detector identifies AI-generated text with detailed pattern analysis and probability scoring.</p>
+        </div>
+        <div class="tool-price">£10</div>
+    </a>
 
-        <a href="{{ url_for('tool_grader') }}" class="tool-card grader" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
-            <div>
-                <span class="tool-icon">📊</span>
-                <h3 class="tool-title">The Grader</h3>
-                <p class="tool-desc">Strict assignment marking by 3 professors with actionable feedback and comprehensive evaluation.</p>
-            </div>
-            <div class="tool-price">£10</div>
-        </a>
-    </div>
+    <a href="{{ url_for('tool_grader') }}" class="tool-card grader" data-tilt data-tilt-max="8" data-tilt-speed="400" data-tilt-perspective="1000">
+        <div>
+            <span class="tool-icon">📊</span>
+            <h3 class="tool-title">The Grader</h3>
+            <p class="tool-desc">Strict assignment marking by 3 professors with actionable feedback and comprehensive evaluation.</p>
+        </div>
+        <div class="tool-price">£10</div>
+    </a>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.8.1/vanilla-tilt.min.js"></script>

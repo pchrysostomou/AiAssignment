@@ -537,12 +537,15 @@ Return JSON format:
     except Exception as e:
         return json.dumps({"error": str(e), "ai_probability": 0, "verdict": "ERROR"})
 
-# TOOL D: The Grader (Strict Marking)
+# TOOL D: The Grader - 3-Round Consensus Debate
 def grade_assignment(brief_text, essay_text):
-    """Grade assignment using all 3 professors"""
+    """Grade assignment using 3-round consensus debate among 3 professors"""
     
-    # Prof. Quill - Content Analysis
-    quill_prompt = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
+    # ROUND 1: Independent Initial Grading
+    print("🎓 ROUND 1: Independent Grading...")
+    
+    # Prof. Quill - Content Analysis (Claude)
+    quill_prompt_r1 = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
 
 ASSIGNMENT BRIEF:
 {brief_text}
@@ -550,15 +553,18 @@ ASSIGNMENT BRIEF:
 STUDENT ESSAY:
 {essay_text}
 
-Evaluate:
+Evaluate independently:
 1. How well does it address the brief?
 2. Content quality and depth
 3. Structure and organization
 
-Provide a score (0-100) and detailed feedback."""
+Provide:
+- A score (0-100)
+- Detailed feedback (2-3 paragraphs)
+- Key strengths and weaknesses"""
 
-    # Dr. Strict - Technical Grading
-    strict_prompt = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly.
+    # Dr. Strict - Technical Grading (GPT-4o)
+    strict_prompt_r1 = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly and independently.
 
 ASSIGNMENT BRIEF:
 {brief_text}
@@ -566,15 +572,18 @@ ASSIGNMENT BRIEF:
 STUDENT ESSAY:
 {essay_text}
 
-Evaluate:
+Evaluate independently:
 1. Grammar and writing quality
 2. Citation and referencing
 3. Academic rigor
 
-Provide a score (0-100) and identify specific weaknesses."""
+Provide:
+- A score (0-100)
+- Detailed feedback identifying specific weaknesses
+- Technical issues found"""
 
-    # Dean Logic - Overall Assessment
-    logic_prompt = f"""You are Dean Logic, the final academic authority. Provide an overall assessment.
+    # Dean Logic - Overall Assessment (Gemini)
+    logic_prompt_r1 = f"""You are Dean Logic, the final academic authority. Provide an independent overall assessment.
 
 ASSIGNMENT BRIEF:
 {brief_text}
@@ -582,35 +591,122 @@ ASSIGNMENT BRIEF:
 STUDENT ESSAY:
 {essay_text}
 
-Provide:
-1. Overall score (0-100)
-2. Key strengths
-3. Critical improvements needed"""
+Provide independently:
+- Overall score (0-100)
+- Key strengths
+- Critical improvements needed
+- Holistic evaluation"""
 
     try:
-        quill_response = call_claude(quill_prompt)
-        quill_score = extract_score(quill_response)
+        # Round 1: Get initial independent grades
+        quill_response_r1 = call_claude(quill_prompt_r1)
+        quill_score_r1 = extract_score(quill_response_r1)
         
-        strict_response = call_gpt4(strict_prompt)
-        strict_score = extract_score(strict_response)
+        strict_response_r1 = call_gpt4(strict_prompt_r1)
+        strict_score_r1 = extract_score(strict_response_r1)
         
-        logic_response = call_gemini(logic_prompt)
-        logic_score = extract_score(logic_response)
+        logic_response_r1 = call_gemini(logic_prompt_r1)
+        logic_score_r1 = extract_score(logic_response_r1)
         
-        average_score = round((quill_score + strict_score + logic_score) / 3)
+        print(f"Round 1 Scores - Quill: {quill_score_r1}, Strict: {strict_score_r1}, Logic: {logic_score_r1}")
+        
+        # ROUND 2: Consensus Phase - Professors read each other's feedback
+        print("🎓 ROUND 2: Consensus Phase...")
+        
+        quill_prompt_r2 = f"""You are Prof. Quill. You've read the feedback from Dr. Strict and Dean Logic.
+
+YOUR INITIAL ASSESSMENT:
+Score: {quill_score_r1}/100
+{quill_response_r1}
+
+DR. STRICT'S ASSESSMENT:
+Score: {strict_score_r1}/100
+{strict_response_r1}
+
+DEAN LOGIC'S ASSESSMENT:
+Score: {logic_score_r1}/100
+{logic_response_r1}
+
+After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
+- Revised score (0-100)
+- Explanation of any changes
+- Final detailed feedback"""
+
+        strict_prompt_r2 = f"""You are Dr. Strict. You've read the feedback from Prof. Quill and Dean Logic.
+
+YOUR INITIAL ASSESSMENT:
+Score: {strict_score_r1}/100
+{strict_response_r1}
+
+PROF. QUILL'S ASSESSMENT:
+Score: {quill_score_r1}/100
+{quill_response_r1}
+
+DEAN LOGIC'S ASSESSMENT:
+Score: {logic_score_r1}/100
+{logic_response_r1}
+
+After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
+- Revised score (0-100)
+- Explanation of any changes
+- Final detailed feedback"""
+
+        logic_prompt_r2 = f"""You are Dean Logic. You've read the feedback from Prof. Quill and Dr. Strict.
+
+YOUR INITIAL ASSESSMENT:
+Score: {logic_score_r1}/100
+{logic_response_r1}
+
+PROF. QUILL'S ASSESSMENT:
+Score: {quill_score_r1}/100
+{quill_response_r1}
+
+DR. STRICT'S ASSESSMENT:
+Score: {strict_score_r1}/100
+{strict_response_r1}
+
+After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
+- Revised score (0-100)
+- Explanation of any changes
+- Final detailed feedback"""
+
+        # Round 2: Get revised consensus grades
+        quill_response_r2 = call_claude(quill_prompt_r2)
+        quill_score_r2 = extract_score(quill_response_r2)
+        
+        strict_response_r2 = call_gpt4(strict_prompt_r2)
+        strict_score_r2 = extract_score(strict_response_r2)
+        
+        logic_response_r2 = call_gemini(logic_prompt_r2)
+        logic_score_r2 = extract_score(logic_response_r2)
+        
+        print(f"Round 2 Scores - Quill: {quill_score_r2}, Strict: {strict_score_r2}, Logic: {logic_score_r2}")
+        
+        # ROUND 3: Final Calculation
+        print("🎓 ROUND 3: Final Calculation...")
+        
+        # Use Round 2 scores (post-consensus) for final average
+        average_score = round((quill_score_r2 + strict_score_r2 + logic_score_r2) / 3)
         
         result = {
             "average_score": average_score,
-            "quill_score": quill_score,
-            "quill_feedback": quill_response,
-            "strict_score": strict_score,
-            "strict_feedback": strict_response,
-            "logic_score": logic_score,
-            "logic_feedback": logic_response
+            "quill_score": quill_score_r2,
+            "quill_feedback": quill_response_r2,
+            "quill_initial_score": quill_score_r1,
+            "strict_score": strict_score_r2,
+            "strict_feedback": strict_response_r2,
+            "strict_initial_score": strict_score_r1,
+            "logic_score": logic_score_r2,
+            "logic_feedback": logic_response_r2,
+            "logic_initial_score": logic_score_r1,
+            "debate_summary": f"Round 1: Quill {quill_score_r1}, Strict {strict_score_r1}, Logic {logic_score_r1}. Round 2 (Consensus): Quill {quill_score_r2}, Strict {strict_score_r2}, Logic {logic_score_r2}. Final Average: {average_score}/100"
         }
+        
+        print(f"✅ Final Average Score: {average_score}/100")
         
         return json.dumps(result)
     except Exception as e:
+        print(f"❌ Error in grading: {str(e)}")
         return json.dumps({"error": str(e), "average_score": 0})
 
 # Routes

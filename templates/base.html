@@ -13,8 +13,7 @@
         }
 
         :root {
-            --bg-deep: #0f0c29;
-            --bg-mid: #302b63;
+            --bg-deep: #050505;
             --glass-bg: rgba(255, 255, 255, 0.05);
             --glass-border: rgba(255, 255, 255, 0.1);
             --neon-blue: #00d4ff;
@@ -27,39 +26,83 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, var(--bg-deep) 0%, var(--bg-mid) 100%);
+            background: #050505;
             color: var(--text-primary);
             min-height: 100vh;
-        }
-
-        /* Navbar */
-        .navbar {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 15px 40px;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
-        .navbar-brand {
-            font-size: 22px;
+        /* Left Sidebar */
+        .sidebar {
+            width: 280px;
+            background: rgba(15, 15, 15, 0.6);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass-border);
+            padding: 30px 20px;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            z-index: 1000;
+        }
+
+        .sidebar-brand {
+            font-size: 20px;
             font-weight: 700;
             background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            margin-bottom: 40px;
             text-decoration: none;
+            display: block;
         }
 
-        .navbar-right {
+        .sidebar-nav {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sidebar-item {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 15px;
+            padding: 14px 18px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            border-radius: 12px;
+            transition: all 0.3s;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .sidebar-item:hover {
+            background: var(--glass-bg);
+            color: var(--text-primary);
+            border-left: 3px solid var(--neon-blue);
+        }
+
+        .sidebar-item.active {
+            background: rgba(0, 212, 255, 0.1);
+            color: var(--neon-blue);
+            border-left: 3px solid var(--neon-blue);
+        }
+
+        .sidebar-icon {
+            font-size: 20px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .sidebar-divider {
+            height: 1px;
+            background: var(--glass-border);
+            margin: 20px 0;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
         }
 
         .user-profile {
@@ -70,8 +113,8 @@
         .user-avatar {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 8px 16px;
+            gap: 12px;
+            padding: 12px 16px;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
@@ -84,8 +127,8 @@
         }
 
         .avatar-circle {
-            width: 32px;
-            height: 32px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             background: linear-gradient(135deg, var(--neon-blue), var(--neon-purple));
             display: flex;
@@ -95,14 +138,29 @@
             font-size: 14px;
         }
 
+        .user-info {
+            flex: 1;
+        }
+
+        .user-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .user-role {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
         .dropdown-menu {
             position: absolute;
-            top: 50px;
+            bottom: 70px;
+            left: 0;
             right: 0;
             background: var(--bg-deep);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
-            min-width: 200px;
             display: none;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             overflow: hidden;
@@ -128,6 +186,20 @@
         .dropdown-item:hover {
             background: var(--glass-bg);
             color: var(--neon-blue);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 280px;
+            flex: 1;
+            min-height: 100vh;
+            background: #050505;
+        }
+
+        .content-wrapper {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px;
         }
 
         /* Support Chat Bubble */
@@ -252,19 +324,37 @@
             font-weight: 600;
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 40px auto;
-            padding: 0 40px;
-        }
-
+        /* Mobile Responsive */
         @media (max-width: 768px) {
-            .navbar {
-                padding: 15px 20px;
+            .sidebar {
+                width: 80px;
+                padding: 20px 10px;
             }
 
-            .container {
-                padding: 0 20px;
+            .sidebar-brand {
+                font-size: 24px;
+                text-align: center;
+            }
+
+            .sidebar-item {
+                justify-content: center;
+                padding: 12px;
+            }
+
+            .sidebar-text {
+                display: none;
+            }
+
+            .user-info {
+                display: none;
+            }
+
+            .main-content {
+                margin-left: 80px;
+            }
+
+            .content-wrapper {
+                padding: 20px;
             }
 
             .chat-window {
@@ -276,27 +366,60 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    <!-- Navbar -->
-    <nav class="navbar">
-        <a href="{{ url_for('dashboard') }}" class="navbar-brand">🎓 The Academic Board</a>
-        <div class="navbar-right">
+    <!-- Left Sidebar -->
+    <div class="sidebar">
+        <a href="{{ url_for('dashboard') }}" class="sidebar-brand">🎓 Academic Board</a>
+        
+        <nav class="sidebar-nav">
+            <a href="{{ url_for('dashboard') }}" class="sidebar-item {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                <span class="sidebar-icon">🏠</span>
+                <span class="sidebar-text">Dashboard</span>
+            </a>
+            <a href="{{ url_for('tool_writer') }}" class="sidebar-item {% if request.endpoint == 'tool_writer' %}active{% endif %}">
+                <span class="sidebar-icon">✍️</span>
+                <span class="sidebar-text">The Architect</span>
+            </a>
+            <a href="{{ url_for('tool_plagiarism') }}" class="sidebar-item {% if request.endpoint == 'tool_plagiarism' %}active{% endif %}">
+                <span class="sidebar-icon">🔍</span>
+                <span class="sidebar-text">The Detective</span>
+            </a>
+            <a href="{{ url_for('tool_detector') }}" class="sidebar-item {% if request.endpoint == 'tool_detector' %}active{% endif %}">
+                <span class="sidebar-icon">🔮</span>
+                <span class="sidebar-text">The Oracle</span>
+            </a>
+            <a href="{{ url_for('tool_grader') }}" class="sidebar-item {% if request.endpoint == 'tool_grader' %}active{% endif %}">
+                <span class="sidebar-icon">📊</span>
+                <span class="sidebar-text">The Grader</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-footer">
             <div class="user-profile" onclick="toggleDropdown()">
                 <div class="user-avatar">
                     <div class="avatar-circle">{{ current_user.username[0].upper() }}</div>
-                    <span>{{ current_user.username }}</span>
+                    <div class="user-info">
+                        <div class="user-name">{{ current_user.username }}</div>
+                        <div class="user-role">Premium</div>
+                    </div>
                 </div>
                 <div class="dropdown-menu" id="userDropdown">
                     <a href="{{ url_for('my_essays') }}" class="dropdown-item">📝 My Essays</a>
                     <a href="{{ url_for('billing') }}" class="dropdown-item">💳 Billing History</a>
-                    <a href="#" class="dropdown-item">⚙️ Settings</a>
+                    <a href="{{ url_for('settings') }}" class="dropdown-item">⚙️ Settings</a>
                     <a href="{{ url_for('logout') }}" class="dropdown-item">🚪 Logout</a>
                 </div>
             </div>
         </div>
-    </nav>
+    </div>
 
-    <!-- Main Content -->
-    {% block content %}{% endblock %}
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <div class="content-wrapper">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
 
     <!-- Support Chat Bubble -->
     <div class="chat-bubble" onclick="toggleChat()">
@@ -380,7 +503,7 @@
             const profile = document.querySelector('.user-profile');
             const dropdown = document.getElementById('userDropdown');
             
-            if (!profile.contains(event.target)) {
+            if (profile && !profile.contains(event.target)) {
                 dropdown.classList.remove('active');
             }
         });
