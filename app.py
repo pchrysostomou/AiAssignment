@@ -38,22 +38,41 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 # Add Stripe Publishable Key to config so templates can access it
 app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 
-# CRITICAL FIX: Completely disable CSP and add CORS headers for Stripe and API calls
+# CRITICAL FIX: Set permissive CSP that allows Stripe.js and eval() for payment processing
 @app.after_request
 def add_security_headers(response):
-    """Remove all CSP restrictions and add permissive CORS headers"""
-    # Remove any existing CSP headers
-    response.headers.pop('Content-Security-Policy', None)
-    response.headers.pop('X-Content-Security-Policy', None)
-    response.headers.pop('X-WebKit-CSP', None)
+    """
+    Configure Content Security Policy to allow:
+    1. Stripe.js library and checkout iframe
+    2. unsafe-eval for Stripe's payment processing
+    3. Our own domain for API calls
+    """
+    # Get the current domain
+    domain = os.getenv('DOMAIN', 'https://aiassignment-x631.onrender.com')
     
-    # Add permissive CORS headers for API calls
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-    response.headers['Access-Control-Max-Age'] = '3600'
+    # Build CSP policy that allows Stripe while maintaining reasonable security
+    csp_policy = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        f"connect-src 'self' {domain} https://api.stripe.com https://www.googleapis.com; "
+        "frame-src 'self' https://js.stripe.com https://hooks.stripe.com; "
+        "frame-ancestors 'self';"
+    )
     
-    # Prevent caching issues
+    # Set CSP header
+    response.headers['Content-Security-Policy'] = csp_policy
+    
+    # Add CORS headers for API routes
+    if request.path.startswith('/api/') or request.path.startswith('/generate-') or request.path.startswith('/create-checkout') or request.path.startswith('/check-'):
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers['Access-Control-Max-Age'] = '3600'
+    
+    # Prevent caching for API routes
     if request.path.startswith('/api/') or request.path.startswith('/generate-') or request.path.startswith('/create-checkout'):
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         response.headers['Pragma'] = 'no-cache'
@@ -1352,5 +1371,6 @@ with app.app_context():
         print("✅ Demo user created")
 
 if __name__ == '__main__':
-    # CRITICAL: Increase timeout for long-running AI operations
+    # Run with increased timeout for long-running AI operations
+    # Note: Gunicorn timeout should be set to 300s in Render settings
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
