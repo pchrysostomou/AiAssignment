@@ -111,13 +111,12 @@ PRICING = {
     'writer': {'price_per_1k': 1000, 'display': '£10 per 1,000 words'},  # Dynamic pricing
     'plagiarism': {'price': 1000, 'display': '£10'},
     'ai_check': {'price': 1000, 'display': '£10'},
-    'grader': {'price': 1000, 'display': '£10'}  # Updated to £10
+    'grader': {'price': 1000, 'display': '£10'}
 }
 
 # API Credentials Initialization with Validation
 anthropic_api_key = os.getenv('ANTHROPIC_API_KEY', '')
 if anthropic_api_key:
-    # Initialize with STRICT API version header
     anthropic_client = anthropic.Anthropic(
         api_key=anthropic_api_key,
         default_headers={"anthropic-version": "2023-06-01"}
@@ -142,10 +141,10 @@ if google_api_key:
 else:
     print("⚠️ WARNING: GOOGLE_API_KEY not found in environment variables")
 
-# Google Custom Search Engine Configuration - Force string type
+# Google Custom Search Engine Configuration
 GOOGLE_CSE_ID = str(os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772')).strip()
 if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
-    print(f"✅ Google CSE ID Configured: '{GOOGLE_CSE_ID}' (type: {type(GOOGLE_CSE_ID).__name__}, length: {len(GOOGLE_CSE_ID)})")
+    print(f"✅ Google CSE ID Configured: '{GOOGLE_CSE_ID}'")
 else:
     print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
@@ -214,19 +213,13 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'pdf', 'docx', 'txt'}
 
 def extract_text_from_pdf(file_path):
-    """
-    Extract text from PDF file with MEMORY-EFFICIENT streaming approach.
-    Limits pages to prevent RAM overload on limited server.
-    """
+    """Extract text from PDF file with MEMORY-EFFICIENT streaming approach."""
     try:
         with open(file_path, 'rb') as file:
             pdf_reader = PyPDF2.PdfReader(file)
             total_pages = len(pdf_reader.pages)
-            
-            # MEMORY OPTIMIZATION: Limit to 100 pages for 25MB files
             max_pages = min(total_pages, 100)
             
-            # Extract text page by page (memory efficient)
             text_chunks = []
             for i in range(max_pages):
                 try:
@@ -240,25 +233,19 @@ def extract_text_from_pdf(file_path):
             text = "\n".join(text_chunks)
             
             if total_pages > max_pages:
-                text += f"\n\n[Note: Document has {total_pages} pages. First {max_pages} pages extracted for performance on limited RAM server.]"
+                text += f"\n\n[Note: Document has {total_pages} pages. First {max_pages} pages extracted.]"
             
             return text.strip()
     except Exception as e:
         raise Exception(f"PDF extraction error: {str(e)}")
 
 def extract_text_from_docx(file_path):
-    """
-    Extract text from DOCX file with MEMORY-EFFICIENT approach.
-    Limits paragraphs to prevent RAM overload.
-    """
+    """Extract text from DOCX file with MEMORY-EFFICIENT approach."""
     try:
         doc = Document(file_path)
         total_paragraphs = len(doc.paragraphs)
-        
-        # MEMORY OPTIMIZATION: Limit to 300 paragraphs for 25MB files
         max_paragraphs = min(total_paragraphs, 300)
         
-        # Extract paragraph by paragraph (memory efficient)
         text_chunks = []
         for i in range(max_paragraphs):
             para_text = doc.paragraphs[i].text
@@ -268,22 +255,18 @@ def extract_text_from_docx(file_path):
         text = "\n".join(text_chunks)
         
         if total_paragraphs > max_paragraphs:
-            text += f"\n\n[Note: Document has {total_paragraphs} paragraphs. First {max_paragraphs} extracted for performance on limited RAM server.]"
+            text += f"\n\n[Note: Document has {total_paragraphs} paragraphs. First {max_paragraphs} extracted.]"
         
         return text.strip()
     except Exception as e:
         raise Exception(f"DOCX extraction error: {str(e)}")
 
 def extract_text_from_file(file_path, filename):
-    """
-    Helper function to extract text from PDF or DOCX files.
-    MEMORY-EFFICIENT: Enforces size limits to prevent RAM overload.
-    """
-    # Check file size (max 25MB per file)
+    """Helper function to extract text from PDF or DOCX files."""
     file_size = os.path.getsize(file_path)
     file_size_mb = file_size / (1024 * 1024)
     
-    if file_size > 25 * 1024 * 1024:  # 25MB
+    if file_size > 25 * 1024 * 1024:
         raise Exception(f"File too large ({file_size_mb:.1f}MB). Maximum 25MB per file.")
     
     print(f"📄 Processing file: {filename} ({file_size_mb:.1f}MB)")
@@ -295,7 +278,6 @@ def extract_text_from_file(file_path, filename):
         return extract_text_from_docx(file_path)
     elif ext == 'txt':
         with open(file_path, 'r', encoding='utf-8') as f:
-            # Limit text files to 200KB to prevent RAM issues
             text = f.read(200 * 1024)
             return text.strip()
     raise Exception("Unsupported file type")
@@ -304,25 +286,17 @@ def parse_uploaded_file(file_path, filename):
     """Parse uploaded file and extract text"""
     return extract_text_from_file(file_path, filename)
 
-# Google Custom Search Integration - ULTRA FLEXIBLE QUERY BROADENING
+# Google Custom Search Integration
 def google_search(query, num_results=5):
-    """
-    Perform Google Custom Search using the configured API key and CSE ID.
-    Returns a list of search results with titles, links, and snippets.
-    ULTRA FLEXIBLE: Maximum broadening to avoid 'No search results' issue.
-    """
-    # Verify both API key and CSE ID are valid strings
+    """Perform Google Custom Search using the configured API key and CSE ID."""
     if not google_api_key or not GOOGLE_CSE_ID or GOOGLE_CSE_ID == '':
-        print(f"⚠️ Google Search unavailable: API key exists: {bool(google_api_key)}, CSE ID: '{GOOGLE_CSE_ID}' (type: {type(GOOGLE_CSE_ID).__name__})")
+        print(f"⚠️ Google Search unavailable")
         return []
     
     try:
-        # ULTRA FLEXIBLE: Extract only the most essential keywords
         words = query.split()
-        # Take first 3-5 meaningful words (VERY broad, minimal filtering)
-        key_words = [w for w in words if len(w) > 1][:5]  # Changed from >2 to >1, reduced from 8 to 5
+        key_words = [w for w in words if len(w) > 1][:5]
         
-        # If too few keywords, use first 80 chars of original query
         if len(key_words) < 2:
             search_query = query[:80]
         else:
@@ -336,18 +310,13 @@ def google_search(query, num_results=5):
             'num': num_results
         }
         
-        print(f"🔍 Google Search Query (ULTRA FLEXIBLE): '{search_query}'")
-        print(f"🔍 Using CSE ID: '{GOOGLE_CSE_ID}' (length: {len(GOOGLE_CSE_ID)})")
+        print(f"🔍 Google Search Query: '{search_query}'")
         
         response = requests.get(url, params=params, timeout=10)
         
-        print(f"🔍 Google API Response Status: {response.status_code}")
-        
         if response.status_code != 200:
-            print(f"❌ Google Search API Error: {response.status_code} - {response.text[:200]}")
+            print(f"❌ Google Search API Error: {response.status_code}")
             return []
-        
-        response.raise_for_status()
         
         data = response.json()
         results = []
@@ -359,14 +328,14 @@ def google_search(query, num_results=5):
                 'snippet': item.get('snippet', '')
             })
         
-        print(f"✅ Google Search completed: {len(results)} results for '{search_query}'")
+        print(f"✅ Google Search completed: {len(results)} results")
         return results
         
     except Exception as e:
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions
+# AI Helper Functions with Retry Logic
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -378,74 +347,53 @@ def call_with_retry(func, max_retries=3):
 
 def call_claude(prompt, max_tokens=8000):
     """
-    Call Claude Sonnet 3.5 (Tier 1 Primary Model) with retry logic and Haiku fallback.
-    PRIMARY: claude-3-5-sonnet-20241022 (High-quality Tier 1 model)
-    FALLBACK: claude-3-haiku-20240307 (only after 3 failed Sonnet attempts)
+    Call Claude 3.5 Sonnet (EXACT MODEL: claude-3-5-sonnet-20241022)
+    Tier 1 confirmed available. Do NOT use "latest" or "opus".
     """
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
     
-    # PRIMARY MODEL: Claude 3.5 Sonnet (Tier 1 High-Quality) with retry logic
     for attempt in range(3):
         try:
-            print(f"🤖 Calling Claude Sonnet 3.5 (Tier 1 - attempt {attempt + 1}/3, max_tokens: {max_tokens})")
+            print(f"🤖 Calling Claude 3.5 Sonnet (claude-3-5-sonnet-20241022) - Attempt {attempt + 1}/3")
             response = anthropic_client.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print(f"✅ Claude Sonnet 3.5 API call successful")
+            print(f"✅ Claude 3.5 Sonnet API call successful")
             return response.content[0].text
-        except anthropic.NotFoundError as e:
-            print(f"❌ Claude Sonnet 404 Error (attempt {attempt + 1}/3): {str(e)}")
-            if attempt < 2:
-                print(f"⏳ Waiting 5 seconds before retry...")
-                time.sleep(5)
-            else:
-                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
         except Exception as e:
             print(f"❌ Claude Sonnet Error (attempt {attempt + 1}/3): {str(e)}")
             if attempt < 2:
-                print(f"⏳ Waiting 5 seconds before retry...")
                 time.sleep(5)
             else:
-                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
-    
-    # FALLBACK MODEL: Claude 3 Haiku (only if Sonnet fails 3 times)
-    try:
-        print(f"🤖 FALLBACK: Calling Claude 3 Haiku (max_tokens: 4096)")
-        response = anthropic_client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=4096,  # Haiku max is 4096
-            messages=[{"role": "user", "content": prompt}]
-        )
-        print(f"✅ Claude Haiku API call successful (fallback)")
-        return response.content[0].text
-    except Exception as e:
-        print(f"❌ Claude Haiku Error: {str(e)}")
-        raise Exception(f"Both Sonnet and Haiku failed: {str(e)}")
+                raise Exception(f"Claude Sonnet failed after 3 attempts: {str(e)}")
 
 def call_gpt4(prompt, model="gpt-4o"):
     """
-    Call OpenAI GPT-4o with retry logic and error handling.
+    Call OpenAI GPT-4o (EXACT MODEL: gpt-4o)
+    Used for Chancellor GPT (Critic 2)
     """
     if not openai_api_key:
         raise Exception("OpenAI API key not configured")
     
     def api_call():
-        print(f"🤖 Calling OpenAI {model}...")
+        print(f"🤖 Calling OpenAI GPT-4o...")
         response = openai.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
-        print(f"✅ OpenAI {model} API call successful")
+        print(f"✅ OpenAI GPT-4o API call successful")
         return response.choices[0].message.content
     return call_with_retry(api_call)
 
 def call_gemini(prompt):
     """
-    Call Google Gemini with retry logic and error handling.
+    Call Google Gemini 1.5 Pro (EXACT MODEL: gemini-1.5-pro, NOT flash)
+    Used for Dean Logic (Critic 1)
+    Generative Language API is ENABLED.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
@@ -454,11 +402,12 @@ def call_gemini(prompt):
         print(f"🤖 Calling Google Gemini 1.5 Pro...")
         model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(prompt)
-        print(f"✅ Google Gemini API call successful")
+        print(f"✅ Google Gemini 1.5 Pro API call successful")
         return response.text
     return call_with_retry(api_call)
 
 def extract_score(text):
+    """Extract score from agent response"""
     matches = re.findall(r'\b(\d{1,3})\b', text)
     for match in matches:
         score = int(match)
@@ -468,21 +417,17 @@ def extract_score(text):
 
 def count_words(text):
     """Count words in text, excluding references section"""
-    # Try to find references section
     ref_markers = ['references', 'bibliography', 'works cited']
     text_lower = text.lower()
     
     for marker in ref_markers:
         if f'\n{marker}\n' in text_lower or f'\n{marker}:' in text_lower:
-            # Split at references section
             parts = re.split(f'\n{marker}[:\n]', text_lower, maxsplit=1)
             if len(parts) > 1:
-                # Count only body text
                 body_text = parts[0]
                 words = body_text.split()
                 return len(words)
     
-    # If no references section found, count all words
     words = text.split()
     return len(words)
 
@@ -603,7 +548,6 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
             suspicion = analysis.get('suspicion_score', 0)
             match_type = analysis.get('type', 'UNKNOWN')
             
-            # Highlight in yellow for high suspicion
             if suspicion > 50:
                 highlight_style = ParagraphStyle('Highlight', parent=styles['Normal'],
                                                 backColor=colors.yellow)
@@ -646,19 +590,26 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - QUAD AGENT CONSENSUS WRITING SYSTEM (4 AGENTS)
+# TOOL B: The Architect - STRICT CONSENSUS 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening - QUAD AGENT CONSENSUS MODE ({word_count} words)...'})}\n\n"
+    """
+    STRICT CONSENSUS LOOP:
+    - Prof. Quill (Claude 3.5 Sonnet) writes
+    - Dean Logic (Gemini 1.5 Pro) critiques with specific rewrites
+    - Chancellor GPT (GPT-4o) critiques with specific rewrites
+    - Loop continues until ALL 3 agents score 80+ in SAME round
+    - Target: 2,200 words total to ensure 2,000+ body words
+    """
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - STRICT CONSENSUS MODE (3 Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
     
-    # NEW: Research Phase - Use Google Custom Search for topic research
+    # Research Phase
     yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
     
     research_context = ""
     try:
-        # Extract key topics from instructions for targeted search
         search_query = instructions[:150]
         search_results = google_search(search_query, num_results=5)
         
@@ -672,46 +623,40 @@ def generate_essay_stream(instructions, word_count):
     except Exception as e:
         yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Research phase error: {str(e)}'})}\n\n"
     
-    # Initial draft with research context
-    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill drafting initial version...'})}\n\n"
+    # Initial draft by Prof. Quill
+    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) drafting initial essay...'})}\n\n"
     
     writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
 
-CORE MANDATE: Write with Spartan precision. Be direct, authoritative, and concise. Avoid flowery language. Every sentence must add value.
+CRITICAL WORD COUNT TARGET:
+- TARGET: {target_total_words} words TOTAL (to ensure {word_count}+ body words after references)
+- Write the full essay body first, THEN add a complete References section separately
 
-CRITICAL WORD COUNT RULES:
-1. TARGET: {target_total_words} words TOTAL (to ensure {word_count}+ body words after references)
-2. BODY TEXT: Aim for {word_count}+ words in Introduction, Analysis, Conclusion
-3. EXCLUSION: The References/Bibliography section is EXCLUDED from body word count
-4. Write the full essay body first, THEN add a complete References section separately
-
-SMART CITATION LOGIC - Analyze the assignment type and decide:
+SMART CITATION LOGIC - Analyze the assignment type:
 - CRITICAL REVIEW of a single paper/book: NO external citations needed (only cite the work being reviewed)
 - LITERATURE REVIEW: MANY citations needed (10-20+ sources)
 - RESEARCH ESSAY: MODERATE citations (5-10 sources)
 - OPINION PIECE: FEW citations (2-5 sources for key claims only)
 - COMPARATIVE ANALYSIS: MODERATE citations (cite each work being compared)
 
-Based on the instructions below, determine the appropriate citation level and include REAL academic citations ONLY when necessary.
-
-THE BAN LIST - STRICTLY FORBIDDEN WORDS (Essay FAILS if used):
+THE BAN LIST - STRICTLY FORBIDDEN WORDS:
 ❌ delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust
 
 SPARTAN STYLE RULES:
-- Direct, authoritative tone. No hedging ("perhaps", "might", "could be").
-- Vary sentence length strategically. Short sentences drive points home. Longer sentences develop complex ideas.
-- Avoid excessive transition words. Do NOT overuse: "Furthermore", "Moreover", "In conclusion", "Additionally".
-- Use active voice. "The study proves X" not "X is proven by the study".
-- Cut unnecessary words. "The fact that" → "That". "In order to" → "To".
-- Contractions are acceptable when they strengthen voice (it's, don't, can't).
-- Minor stylistic imperfections for authenticity (humans aren't perfect).
+- Direct, authoritative tone. No hedging.
+- Vary sentence length strategically.
+- Avoid excessive transition words.
+- Use active voice.
+- Cut unnecessary words.
+- Contractions acceptable when they strengthen voice.
+- Minor stylistic imperfections for authenticity.
 
 INSTRUCTIONS:
 {instructions}
 
 {research_context}
 
-Remember: Write {target_total_words} words total to ensure {word_count}+ body words. Apply smart citation logic based on assignment type. No banned words. No fluff."""
+Write {target_total_words} words total. Apply smart citation logic. No banned words. No fluff."""
 
     try:
         current_draft = call_claude(writer_prompt, max_tokens=8000)
@@ -721,83 +666,25 @@ Remember: Write {target_total_words} words total to ensure {word_count}+ body wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # QUAD AGENT CONSENSUS LOOP - Minimum 5 rounds, ALL 4 AGENTS MUST SCORE 80+
-    MIN_ROUNDS = 5
-    MAX_ROUNDS = 15
-    
-    all_scores = {'quill': [], 'strict': [], 'logic': [], 'chancellor': []}
+    # STRICT CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
+    round_count = 0
+    MAX_ROUNDS = 15  # Hard limit safety break
     
-    for round_num in range(1, MAX_ROUNDS + 1):
+    # Store specific rewrites from critics
+    logic_rewrites = ""
+    gpt_rewrites = ""
+    
+    while round_count < MAX_ROUNDS:
+        round_count += 1
         current_word_count = count_words(current_draft)
-        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_num}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # AGENT 1: Prof. Quill (Claude) - Content & Structure
-        yield f"data: {json.dumps({'type': 'log', 'message': '👨‍🏫 Prof. Quill evaluating content & structure...'})}\n\n"
+        # CRITIC 1: Dean Logic (Gemini 1.5 Pro) - Active Contribution
+        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro) evaluating...'})}\n\n"
         
-        quill_prompt = f"""You are Prof. Quill, an expert academic evaluator. Grade this essay strictly.
-
-INSTRUCTIONS: {instructions}
-
-ESSAY: {current_draft}
-
-Evaluation criteria:
-- Content quality, depth, and originality
-- Argument structure and logical flow
-- Academic rigor and critical analysis
-- Word count: Target {word_count}+ body words (current: {current_word_count} body words)
-- DEDUCT 20 POINTS if ANY banned words detected (delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust)
-- DEDUCT 15 POINTS if body word count is below {word_count}
-
-Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback."""
-
-        try:
-            quill_response = call_claude(quill_prompt, max_tokens=2000)
-            quill_score = extract_score(quill_response)
-            all_scores['quill'].append(quill_score)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Prof. Quill: {quill_score}/100'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Prof. Quill error: {str(e)}'})}\n\n"
-            quill_score = 0
-            quill_response = "Error during grading"
-            all_scores['quill'].append(0)
-        
-        # AGENT 2: Dr. Strict (GPT-4o) - Technical Quality
-        yield f"data: {json.dumps({'type': 'log', 'message': '👨‍⚖️ Dr. Strict evaluating technical quality...'})}\n\n"
-        
-        strict_prompt = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly.
-
-INSTRUCTIONS: {instructions}
-
-ESSAY: {current_draft}
-
-Evaluation criteria:
-- Grammar, spelling, and punctuation
-- Citation format and academic style
-- Writing clarity and precision
-- Spartan style adherence (direct, concise, no fluff)
-- Word count: Target {word_count}+ body words (current: {current_word_count} body words)
-- DEDUCT 20 POINTS if ANY banned words detected
-- DEDUCT 15 POINTS if body word count is below {word_count}
-
-Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback."""
-
-        try:
-            strict_response = call_gpt4(strict_prompt)
-            strict_score = extract_score(strict_response)
-            all_scores['strict'].append(strict_score)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dr. Strict: {strict_score}/100'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Dr. Strict error: {str(e)}'})}\n\n"
-            strict_score = 0
-            strict_response = "Error during grading"
-            all_scores['strict'].append(0)
-        
-        # AGENT 3: Dean Logic (Gemini) - Overall Assessment & Citations
-        yield f"data: {json.dumps({'type': 'log', 'message': '👨‍💼 Dean Logic evaluating overall quality & citations...'})}\n\n"
-        
-        logic_prompt = f"""You are Dean Logic, the final academic authority. Grade this essay strictly.
+        logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
 
 INSTRUCTIONS: {instructions}
 
@@ -812,29 +699,46 @@ Evaluation criteria:
 - DEDUCT 20 POINTS if ANY banned words detected
 - DEDUCT 15 POINTS if body word count is below {word_count}
 
-Verify citations based on assignment type:
-- Critical review → Minimal citations needed
-- Literature review → Many citations needed
-- Research essay → Moderate citations needed
-- Opinion piece → Few citations needed
+CRITICAL REQUIREMENT - ACTIVE CONTRIBUTION:
+If you score below 80, you MUST provide:
+1. Your score (0-100) in format: 'Score: [number]'
+2. Specific rewritten paragraphs or new citations/arguments that MUST be added
+3. Label your contributions clearly as "DEAN LOGIC REWRITES:"
 
-Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback."""
+Example format if score < 80:
+Score: 75
+
+DEAN LOGIC REWRITES:
+[Paragraph 3 should be replaced with:]
+"The evidence suggests that X is correlated with Y. Smith (2023) demonstrates this through longitudinal analysis..."
+
+[Add new citation after paragraph 5:]
+"Furthermore, recent studies by Johnson et al. (2024) indicate..."
+
+Provide score and specific rewrites if needed."""
 
         try:
             logic_response = call_gemini(logic_prompt)
-            logic_score = extract_score(logic_response)
-            all_scores['logic'].append(logic_score)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dean Logic: {logic_score}/100'})}\n\n"
+            score_logic = extract_score(logic_response)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dean Logic: {score_logic}/100'})}\n\n"
+            
+            # Extract rewrites if score < 80
+            if score_logic < 80 and "DEAN LOGIC REWRITES:" in logic_response:
+                logic_rewrites = logic_response.split("DEAN LOGIC REWRITES:")[1].strip()
+                yield f"data: {json.dumps({'type': 'log', 'message': '📝 Dean Logic provided specific rewrites'})}\n\n"
+            else:
+                logic_rewrites = ""
+                
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Dean Logic error: {str(e)}'})}\n\n"
-            logic_score = 0
+            score_logic = 0
             logic_response = "Error during grading"
-            all_scores['logic'].append(0)
+            logic_rewrites = ""
         
-        # AGENT 4: Chancellor GPT (OpenAI GPT-4o) - Final Auditor
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT auditing final quality...'})}\n\n"
+        # CRITIC 2: Chancellor GPT (GPT-4o) - Active Contribution
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT (GPT-4o) evaluating...'})}\n\n"
         
-        chancellor_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade this essay with the highest standards.
+        gpt_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade this essay with the highest standards.
 
 INSTRUCTIONS: {instructions}
 
@@ -849,110 +753,113 @@ Evaluation criteria:
 - DEDUCT 20 POINTS if ANY banned words detected
 - DEDUCT 15 POINTS if body word count is below {word_count}
 
-As the final auditor, ensure this essay meets the highest academic standards. Be thorough but fair.
+CRITICAL REQUIREMENT - ACTIVE CONTRIBUTION:
+If you score below 80, you MUST provide:
+1. Your score (0-100) in format: 'Score: [number]'
+2. Specific rewritten paragraphs or new citations/arguments that MUST be added
+3. Label your contributions clearly as "CHANCELLOR GPT REWRITES:"
 
-Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback."""
+Example format if score < 80:
+Score: 72
+
+CHANCELLOR GPT REWRITES:
+[Introduction needs stronger hook:]
+"In the contemporary discourse on X, scholars have increasingly recognized..."
+
+[Paragraph 7 lacks evidence:]
+"According to Williams (2023), the correlation between A and B is statistically significant (p < 0.01)..."
+
+Provide score and specific rewrites if needed."""
 
         try:
-            chancellor_response = call_gpt4(chancellor_prompt)
-            chancellor_score = extract_score(chancellor_response)
-            all_scores['chancellor'].append(chancellor_score)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {chancellor_score}/100'})}\n\n"
+            gpt_response = call_gpt4(gpt_prompt)
+            score_gpt = extract_score(gpt_response)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {score_gpt}/100'})}\n\n"
+            
+            # Extract rewrites if score < 80
+            if score_gpt < 80 and "CHANCELLOR GPT REWRITES:" in gpt_response:
+                gpt_rewrites = gpt_response.split("CHANCELLOR GPT REWRITES:")[1].strip()
+                yield f"data: {json.dumps({'type': 'log', 'message': '📝 Chancellor GPT provided specific rewrites'})}\n\n"
+            else:
+                gpt_rewrites = ""
+                
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Chancellor GPT error: {str(e)}'})}\n\n"
-            chancellor_score = 0
-            chancellor_response = "Error during grading"
-            all_scores['chancellor'].append(0)
+            score_gpt = 0
+            gpt_response = "Error during grading"
+            gpt_rewrites = ""
         
-        # Calculate average score for this round (ALL 4 AGENTS)
-        avg_score = round((quill_score + strict_score + logic_score + chancellor_score) / 4)
-        yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': avg_score})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_num} Average: {avg_score}/100 (Quill: {quill_score}, Strict: {strict_score}, Logic: {logic_score}, Chancellor: {chancellor_score})'})}\n\n"
+        # Calculate average score (only from critics, writer doesn't self-grade)
+        avg_score = round((score_logic + score_gpt) / 2)
+        yield f"data: {json.dumps({'type': 'score', 'round': round_count, 'score': avg_score})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_count} Average: {avg_score}/100 (Logic: {score_logic}, GPT: {score_gpt})'})}\n\n"
         
         # Track best draft
         if avg_score > best_avg_score:
             best_avg_score = avg_score
             best_draft = current_draft
         
-        # STRICT TERMINATION CRITERIA - ALL 4 AGENTS MUST SCORE 80+
-        # 1. Minimum 5 rounds completed
-        # 2. Word count >= 2000 body words
-        # 3. ALL FOUR agents score 80+ in the SAME round
-        if round_num >= MIN_ROUNDS and current_word_count >= word_count and quill_score >= 80 and strict_score >= 80 and logic_score >= 80 and chancellor_score >= 80:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 CONSENSUS ACHIEVED! All 4 agents agree (80+) after {round_num} rounds!'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
+        # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+
+        if score_logic >= 80 and score_gpt >= 80:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All agents agree (80+) after {round_count} rounds!'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
             break
+        else:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt})'})}\n\n"
         
         # Stop if max rounds reached
-        if round_num >= MAX_ROUNDS:
+        if round_count >= MAX_ROUNDS:
             yield f"data: {json.dumps({'type': 'log', 'message': f'⏱️ Max {MAX_ROUNDS} rounds reached. Using best draft (avg: {best_avg_score}/100)'})}\n\n"
             current_draft = best_draft
             break
         
-        # REVISION PHASE - All 4 agents contribute feedback
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising based on quad-agent feedback...'})}\n\n"
+        # REVISION PHASE - Prof. Quill MERGES critic contributions
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill merging critic contributions...'})}\n\n"
         
         word_count_guidance = ""
         if current_word_count < word_count:
-            word_count_guidance = f"\n\nCRITICAL: Current body word count ({current_word_count}) is below target ({word_count}). EXPAND the essay by adding more depth, examples, and analysis. DO NOT just add filler - add substantive content. Aim for {target_total_words} total words."
+            word_count_guidance = f"\n\nCRITICAL: Current body word count ({current_word_count}) is below target ({word_count}). EXPAND the essay by adding more depth, examples, and analysis."
         elif current_word_count > word_count * 1.15:
-            word_count_guidance = f"\n\nNote: Current body word count ({current_word_count}) exceeds target ({word_count}). Tighten the essay by removing redundancy while keeping all key points."
+            word_count_guidance = f"\n\nNote: Current body word count ({current_word_count}) exceeds target ({word_count}). Tighten the essay by removing redundancy."
         
-        refine_prompt = f"""Revise the essay based on QUAD-AGENT FEEDBACK (4 agents). Apply SPARTAN ACADEMIC protocol.
+        merge_prompt = f"""You are Prof. Quill. Revise the essay by MERGING specific contributions from Dean Logic and Chancellor GPT.
 
-CRITICAL WORD COUNT RULES (MUST FOLLOW):
-1. TARGET: {target_total_words} words TOTAL (to ensure {word_count}+ body words)
-2. BODY TEXT: Aim for {word_count}+ words in Introduction, Analysis, Conclusion
-3. References/Bibliography is EXCLUDED from body word count
+CRITICAL TARGET: {target_total_words} words total to ensure {word_count}+ body words after references.
 {word_count_guidance}
-
-SMART CITATION LOGIC:
-- Analyze assignment type and apply appropriate citation level
-- Critical review of single work → Minimal external citations
-- Literature review → Many citations
-- Research essay → Moderate citations
-- Opinion piece → Few citations for key claims only
-
-THE BAN LIST - STRICTLY FORBIDDEN (Essay FAILS if used):
-❌ delve, tapestry, landscape, leverage, spearhead, multifaceted, underscore, testament, symphony, rich, realm, myriad, plethora, paradigm, robust
-
-SPARTAN STYLE:
-- Direct, authoritative. No hedging.
-- Vary sentence length. Short sentences punch. Longer ones develop.
-- Cut transition word overuse (Furthermore, Moreover, Additionally).
-- Active voice. Cut fluff.
 
 ORIGINAL INSTRUCTIONS: {instructions}
 
 CURRENT DRAFT: {current_draft}
 
-PROF. QUILL FEEDBACK (Score: {quill_score}/100):
-{quill_response}
+DEAN LOGIC'S SPECIFIC REWRITES (Score: {score_logic}/100):
+{logic_rewrites if logic_rewrites else "No specific rewrites provided (score was 80+)"}
 
-DR. STRICT FEEDBACK (Score: {strict_score}/100):
-{strict_response}
+CHANCELLOR GPT'S SPECIFIC REWRITES (Score: {score_gpt}/100):
+{gpt_rewrites if gpt_rewrites else "No specific rewrites provided (score was 80+)"}
 
-DEAN LOGIC FEEDBACK (Score: {logic_score}/100):
-{logic_response}
+MERGE REQUIREMENTS:
+1. Integrate Dean Logic's specific text blocks into the narrative while maintaining flow
+2. Integrate Chancellor GPT's specific text blocks into the narrative while maintaining flow
+3. Ensure all new citations are properly formatted
+4. Maintain SPARTAN style (direct, authoritative, no fluff)
+5. Hit {target_total_words} words total
+6. Zero banned words (delve, tapestry, landscape, etc.)
 
-CHANCELLOR GPT FEEDBACK (Score: {chancellor_score}/100):
-{chancellor_response}
-
-Improve the essay while hitting {target_total_words} total words (ensuring {word_count}+ body words after references). Address ALL FOUR agents' feedback. Apply smart citations. Zero banned words. Zero fluff."""
+Revise the essay by merging the specific contributions from both critics."""
 
         try:
-            current_draft = call_claude(refine_prompt, max_tokens=8000)
+            current_draft = call_claude(merge_prompt, max_tokens=8000)
             new_word_count = count_words(current_draft)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Revision complete ({new_word_count} body words)'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Merge complete ({new_word_count} body words)'})}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Revision error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Merge error: {str(e)}'})}\n\n"
             break
 
     final_word_count = count_words(best_draft)
     final_avg = best_avg_score
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 COMPLETE! Final: {final_avg}/100 avg, {final_word_count} body words'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 COMPLETE! Final: {final_avg}/100 avg, {final_word_count} body words, {round_count} rounds'})}\n\n"
     
-    # Save
+    # Save to database
     try:
         essay = Essay(
             user_id=current_user.id,
@@ -960,7 +867,7 @@ Improve the essay while hitting {target_total_words} total words (ensuring {word
             instructions=instructions,
             final_content=best_draft,
             final_score=final_avg,
-            rounds_used=len(all_scores['quill']),
+            rounds_used=round_count,
             word_count_limit=word_count
         )
         db.session.add(essay)
@@ -1003,10 +910,8 @@ Return JSON format:
 def grade_assignment(brief_text, essay_text):
     """Grade assignment using 3-round consensus debate among 3 professors"""
     
-    # ROUND 1: Independent Initial Grading
     print("🎓 ROUND 1: Independent Grading...")
     
-    # Prof. Quill - Content Analysis (Claude)
     quill_prompt_r1 = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
 
 ASSIGNMENT BRIEF:
@@ -1025,7 +930,6 @@ Provide:
 - Detailed feedback (2-3 paragraphs)
 - Key strengths and weaknesses"""
 
-    # Dr. Strict - Technical Grading (GPT-4o)
     strict_prompt_r1 = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly and independently.
 
 ASSIGNMENT BRIEF:
@@ -1044,7 +948,6 @@ Provide:
 - Detailed feedback identifying specific weaknesses
 - Technical issues found"""
 
-    # Dean Logic - Overall Assessment (Gemini)
     logic_prompt_r1 = f"""You are Dean Logic, the final academic authority. Provide an independent overall assessment.
 
 ASSIGNMENT BRIEF:
@@ -1060,7 +963,6 @@ Provide independently:
 - Holistic evaluation"""
 
     try:
-        # Round 1: Get initial independent grades
         quill_response_r1 = call_claude(quill_prompt_r1)
         quill_score_r1 = extract_score(quill_response_r1)
         
@@ -1072,7 +974,6 @@ Provide independently:
         
         print(f"Round 1 Scores - Quill: {quill_score_r1}, Strict: {strict_score_r1}, Logic: {logic_score_r1}")
         
-        # ROUND 2: Consensus Phase - Professors read each other's feedback
         print("🎓 ROUND 2: Consensus Phase...")
         
         quill_prompt_r2 = f"""You are Prof. Quill. You've read the feedback from Dr. Strict and Dean Logic.
@@ -1132,7 +1033,6 @@ After reading your colleagues' feedback, reconsider your evaluation. Adjust your
 - Explanation of any changes
 - Final detailed feedback"""
 
-        # Round 2: Get revised consensus grades
         quill_response_r2 = call_claude(quill_prompt_r2)
         quill_score_r2 = extract_score(quill_response_r2)
         
@@ -1144,10 +1044,8 @@ After reading your colleagues' feedback, reconsider your evaluation. Adjust your
         
         print(f"Round 2 Scores - Quill: {quill_score_r2}, Strict: {strict_score_r2}, Logic: {logic_score_r2}")
         
-        # ROUND 3: Final Calculation
         print("🎓 ROUND 3: Final Calculation...")
         
-        # Use Round 2 scores (post-consensus) for final average
         average_score = round((quill_score_r2 + strict_score_r2 + logic_score_r2) / 3)
         
         result = {
@@ -1206,17 +1104,14 @@ def register():
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
         
-        # Check if passwords match
         if password != confirm_password:
             flash('Passwords do not match!', 'error')
             return redirect(url_for('register'))
         
-        # Check for existing username
         if User.query.filter_by(username=username).first():
             flash('Username already exists. Please choose a different username.', 'error')
             return redirect(url_for('register'))
         
-        # Check for existing email
         if User.query.filter_by(email=email).first():
             flash('Email already registered. Please use a different email or login.', 'error')
             return redirect(url_for('register'))
@@ -1227,14 +1122,13 @@ def register():
             db.session.add(user)
             db.session.commit()
             
-            # Send mock welcome email
             email_body = f"""
 Welcome to The Academic Board, {username}!
 
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (Now with 4-Agent Consensus!)
+- The Architect: AI Essay Writer (STRICT CONSENSUS 3-Agent System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1316,7 +1210,6 @@ def support_chat():
         if not user_message:
             return jsonify({'reply': 'Please provide a message.'}), 400
         
-        # Check if OpenAI API key exists
         if not os.getenv('OPENAI_API_KEY'):
             return jsonify({'reply': 'System Error: Contact Admin - OpenAI API key not configured.'}), 500
         
@@ -1329,10 +1222,10 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with 4-agent consensus system (Prof. Quill, Dr. Strict, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with STRICT CONSENSUS 3-agent system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
-- The Grader: Strict assignment marking (now £10)
+- The Grader: Strict assignment marking
 
 Be polite, concise, and helpful. Troubleshoot errors and explain features."""
         
@@ -1361,10 +1254,7 @@ Be polite, concise, and helpful. Troubleshoot errors and explain features."""
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
-    """
-    MEMORY-OPTIMIZED file upload handler for 25MB files.
-    Processes files efficiently to avoid RAM crashes on limited server.
-    """
+    """MEMORY-OPTIMIZED file upload handler for 25MB files."""
     if 'file' not in request.files:
         return jsonify({'error': 'No file'}), 400
     
@@ -1377,18 +1267,12 @@ def upload_file():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # Save file
         file.save(filepath)
-        
-        # MEMORY-EFFICIENT: Extract text with limits (100 pages PDF, 300 paragraphs DOCX)
         text = extract_text_from_file(filepath, filename)
         
-        # Clean up immediately to free RAM
         os.remove(filepath)
         filepath = None
         
-        # Limit extracted text for frontend display (max 100KB)
-        # Full text is already processed, this is just for preview
         if len(text) > 100000:
             text = text[:100000] + "\n\n[Preview truncated. Full content will be used in essay generation.]"
         
@@ -1396,7 +1280,6 @@ def upload_file():
         return jsonify({'success': True, 'text': text})
         
     except Exception as e:
-        # Clean up on error
         if filepath and os.path.exists(filepath):
             os.remove(filepath)
         print(f"❌ Upload error: {str(e)}")
@@ -1414,15 +1297,12 @@ def create_checkout_session():
         if tool_type not in PRICING:
             return jsonify({'error': 'Invalid tool'}), 400
         
-        # Calculate amount based on tool type
         if tool_type == 'writer':
-            # Dynamic pricing for writer
             word_count = data.get('word_count', 2000)
             amount = int((word_count / 1000) * PRICING['writer']['price_per_1k'])
             product_name = f'Essay Writing ({word_count:,} words)'
             print(f"💰 Writer pricing: {word_count} words = £{amount/100}")
         else:
-            # Fixed pricing for other tools
             amount = PRICING[tool_type]['price']
             product_names = {
                 'plagiarism': 'Plagiarism Check',
@@ -1433,7 +1313,6 @@ def create_checkout_session():
         
         session['pending_task'] = {'tool_type': tool_type, 'data': data}
         
-        # Hardcode Render domain for success_url
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
@@ -1469,7 +1348,6 @@ def payment_success():
             checkout_session = stripe.checkout.Session.retrieve(session_id)
             
             if checkout_session.payment_status == 'paid':
-                # Record payment
                 payment = Payment(
                     user_id=current_user.id,
                     amount=checkout_session.amount_total,
@@ -1481,7 +1359,6 @@ def payment_success():
                 
                 flash('Payment successful!', 'success')
                 
-                # Redirect to appropriate tool
                 tool_routes = {
                     'writer': 'tool_writer',
                     'plagiarism': 'tool_plagiarism',
@@ -1521,16 +1398,10 @@ def check_plagiarism():
         return jsonify({'error': 'Text required'}), 400
     
     try:
-        # Step 1: Hunter (Gemini)
         hunter_findings = plagiarism_hunter_gemini(text)
-        
-        # Step 2: Analyst (GPT-4o)
         analyst_findings = plagiarism_analyst_gpt(text, hunter_findings)
-        
-        # Step 3: Reporter (Claude) - Generate PDF
         pdf_filename = plagiarism_reporter_claude(text, hunter_findings, analyst_findings, current_user.id)
         
-        # Save report
         report = Report(
             user_id=current_user.id,
             tool_type='plagiarism',
@@ -1664,6 +1535,5 @@ with app.app_context():
         print("✅ Demo user created")
 
 if __name__ == '__main__':
-    # Run with increased timeout for long-running AI operations
-    # CRITICAL: Gunicorn timeout MUST be set to 300s in Render Start Command: gunicorn --timeout 300 app:app
+    # CRITICAL: Gunicorn timeout MUST be set to 300s+ in Render Start Command: gunicorn --timeout 300 app:app
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
