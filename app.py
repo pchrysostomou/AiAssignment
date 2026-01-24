@@ -666,19 +666,18 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - ULTIMATE FIX STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    ULTIMATE FIX STRICT CONSENSUS LOOP:
-    - Prof. Quill (Claude 3.5 Sonnet 20241022 - Tier 1)
-    - Dean Logic (Gemini - Smart Model Discovery with Emergency Fallback)
+    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP:
+    - Prof. Quill (Claude 3.5 Sonnet 20241022 - Writer + Self-Grader)
+    - Dean Logic (Gemini - Smart Model Discovery)
     - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
+    - GROWTH MODE: Forces expansion when under target (prevents shrinking bug)
     - Target: 2,200 words total to ensure 2,000+ body words
-    
-    NO MORE 404 ERRORS - using smart model discovery with emergency fallback.
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - ULTIMATE FIX STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - GROWTH MODE + SELF-REFLECTION (3 Premium Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -744,7 +743,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # ULTIMATE FIX STRICT CONSENSUS LOOP
+    # GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -867,10 +866,42 @@ Provide score and specific rewrites if needed."""
             gpt_response = "Error during grading"
             gpt_rewrites = ""
         
-        # Calculate average score (only from critics, writer doesn't self-grade)
-        avg_score = round((score_logic + score_gpt) / 2)
+        # --- CRITIC 3: Prof. Quill Self-Reflection (Claude) ---
+        yield f"data: {json.dumps({'type': 'log', 'message': '🤔 Prof. Quill (Claude) self-evaluating...'})}\n\n"
+        
+        quill_grade_prompt = f"""You are Prof. Quill. Grade your own draft OBJECTIVELY.
+
+INSTRUCTIONS: {instructions}
+
+YOUR DRAFT: {current_draft}
+
+Target: {word_count}+ body words. Current: {current_word_count} body words.
+
+STRICT RULES:
+- If current < target, your Max Score is 60 (you failed the word count requirement)
+- Did you maintain the Spartan tone?
+- Did you avoid banned words?
+- Is the argumentation strong?
+
+Provide:
+1. Score (0-100) in format: 'Score: [number]'
+2. Brief self-correction plan if score < 80
+
+Be harsh on yourself."""
+
+        try:
+            quill_grade_response = call_claude(quill_grade_prompt, max_tokens=2000)
+            score_quill = extract_score(quill_grade_response)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Prof. Quill Self-Score: {score_quill}/100'})}\n\n"
+        except Exception as e:
+            score_quill = 0
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Quill self-grade error: {str(e)}'})}\n\n"
+        
+        # Calculate Average of 3 Agents
+        avg_score = round((score_logic + score_gpt + score_quill) / 3)
+        
         yield f"data: {json.dumps({'type': 'score', 'round': round_count, 'score': avg_score})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_count} Average: {avg_score}/100 (Logic: {score_logic}, GPT: {score_gpt})'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_count} Average: {avg_score}/100 (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
         
         # Track best draft
         if avg_score > best_avg_score:
@@ -878,12 +909,12 @@ Provide score and specific rewrites if needed."""
             best_draft = current_draft
         
         # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+
-        if score_logic >= 80 and score_gpt >= 80:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All agents agree (80+) after {round_count} rounds!'})}\n\n"
+        if score_logic >= 80 and score_gpt >= 80 and score_quill >= 80:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All 3 agents agree (80+) after {round_count} rounds!'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
             break
         else:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt})'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
         
         # Stop if max rounds reached
         if round_count >= MAX_ROUNDS:
@@ -891,39 +922,49 @@ Provide score and specific rewrites if needed."""
             current_draft = best_draft
             break
         
+        # --- SMART MODE SWITCHING: GROWTH VS REFINEMENT ---
+        if current_word_count < word_count:
+            # PHASE 1: AGGRESSIVE GROWTH (Under Target)
+            # Force the AI to EXPAND only. Forbidden to delete text.
+            deficit = word_count - current_word_count
+            mode_instruction = f"""
+*** GROWTH MODE ACTIVATED (URGENT) ***
+Current: {current_word_count} words. Target: {word_count} words.
+MISSING: {deficit} words.
+
+STRICT RULES:
+1. 🚫 DO NOT DELETE, shorten, or summarize existing text. Keep it all.
+2. ✅ YOU MUST WRITE {deficit} NEW words minimum.
+3. Method: Take every existing paragraph and EXPAND it with examples, evidence, and analysis.
+4. If critics found errors, fix them by ADDING explanation, not removing text.
+"""
+        else:
+            # PHASE 2: REFINEMENT (Target Met)
+            # Now allowed to edit/polish.
+            mode_instruction = f"""
+*** REFINEMENT MODE ACTIVATED ***
+Target met ({current_word_count}/{word_count}).
+Now you may polish the text, fix flow, and remove redundancy while keeping the count above {word_count}.
+"""
+
         # REVISION PHASE - Prof. Quill MERGES critic contributions
         yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) merging critic contributions...'})}\n\n"
         
-        word_count_guidance = ""
-        if current_word_count < word_count:
-            word_count_guidance = f"\n\nCRITICAL: Current body word count ({current_word_count}) is below target ({word_count}). EXPAND the essay by adding more depth, examples, and analysis."
-        elif current_word_count > word_count * 1.15:
-            word_count_guidance = f"\n\nNote: Current body word count ({current_word_count}) exceeds target ({word_count}). Tighten the essay by removing redundancy."
-        
-        merge_prompt = f"""You are Prof. Quill. Revise the essay by MERGING specific contributions from Dean Logic and Chancellor GPT.
-
-CRITICAL TARGET: {target_total_words} words total to ensure {word_count}+ body words after references.
-{word_count_guidance}
+        # Apply the mode to the prompt
+        merge_prompt = f"""You are Prof. Quill.
+{mode_instruction}
 
 ORIGINAL INSTRUCTIONS: {instructions}
 
 CURRENT DRAFT: {current_draft}
 
-DEAN LOGIC'S SPECIFIC REWRITES (Score: {score_logic}/100):
-{logic_rewrites if logic_rewrites else "No specific rewrites provided (score was 80+)"}
+CRITICS' FEEDBACK:
+Dean Logic: {logic_rewrites if logic_rewrites else "Expand content."}
+Chancellor GPT: {gpt_rewrites if gpt_rewrites else "Expand content."}
 
-CHANCELLOR GPT'S SPECIFIC REWRITES (Score: {score_gpt}/100):
-{gpt_rewrites if gpt_rewrites else "No specific rewrites provided (score was 80+)"}
-
-MERGE REQUIREMENTS:
-1. Integrate Dean Logic's specific text blocks into the narrative while maintaining flow
-2. Integrate Chancellor GPT's specific text blocks into the narrative while maintaining flow
-3. Ensure all new citations are properly formatted
-4. Maintain SPARTAN style (direct, authoritative, no fluff)
-5. Hit {target_total_words} words total
-6. Zero banned words (delve, tapestry, landscape, etc.)
-
-Revise the essay by merging the specific contributions from both critics."""
+EXECUTION:
+Revise the essay following the STRICT RULES of the current Mode above.
+"""
 
         try:
             current_draft = call_claude(merge_prompt, max_tokens=8000)
@@ -1206,7 +1247,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (ULTIMATE FIX 3-Agent Consensus System!)
+- The Architect: AI Essay Writer (GROWTH MODE + SELF-REFLECTION System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1300,7 +1341,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with ULTIMATE FIX 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with GROWTH MODE + SELF-REFLECTION system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
