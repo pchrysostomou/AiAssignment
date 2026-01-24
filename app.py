@@ -378,52 +378,52 @@ def call_with_retry(func, max_retries=3):
 
 def call_claude(prompt, max_tokens=8000):
     """
-    Call Claude Sonnet 3.5 with 404 retry logic and Haiku fallback.
-    PRIMARY: claude-3-5-sonnet-20241022
-    FALLBACK: claude-3-haiku-20240307 (only after 3 failed Sonnet attempts)
+    Call Claude Opus 4.5 (THE STRONGEST) with retry logic and Opus 4 fallback.
+    PRIMARY: claude-opus-4-5 (STRONGEST MODEL - 30K input, 8K output)
+    FALLBACK: claude-opus-4 (only after 3 failed Opus 4.5 attempts)
     """
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
     
-    # PRIMARY MODEL: Claude 3.5 Sonnet with retry logic
+    # PRIMARY MODEL: Claude Opus 4.5 (THE STRONGEST) with retry logic
     for attempt in range(3):
         try:
-            print(f"🤖 Calling Claude Sonnet 3.5 (attempt {attempt + 1}/3, max_tokens: {max_tokens})")
+            print(f"🤖 Calling Claude Opus 4.5 (THE STRONGEST - attempt {attempt + 1}/3, max_tokens: {max_tokens})")
             response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-opus-4-5",
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print(f"✅ Claude Sonnet 3.5 API call successful")
+            print(f"✅ Claude Opus 4.5 API call successful")
             return response.content[0].text
         except anthropic.NotFoundError as e:
-            print(f"❌ Claude Sonnet 404 Error (attempt {attempt + 1}/3): {str(e)}")
+            print(f"❌ Claude Opus 4.5 404 Error (attempt {attempt + 1}/3): {str(e)}")
             if attempt < 2:
                 print(f"⏳ Waiting 5 seconds before retry...")
                 time.sleep(5)
             else:
-                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
+                print(f"⚠️ Opus 4.5 failed 3 times, falling back to Opus 4...")
         except Exception as e:
-            print(f"❌ Claude Sonnet Error (attempt {attempt + 1}/3): {str(e)}")
+            print(f"❌ Claude Opus 4.5 Error (attempt {attempt + 1}/3): {str(e)}")
             if attempt < 2:
                 print(f"⏳ Waiting 5 seconds before retry...")
                 time.sleep(5)
             else:
-                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
+                print(f"⚠️ Opus 4.5 failed 3 times, falling back to Opus 4...")
     
-    # FALLBACK MODEL: Claude 3 Haiku (only if Sonnet fails 3 times)
+    # FALLBACK MODEL: Claude Opus 4 (only if Opus 4.5 fails 3 times)
     try:
-        print(f"🤖 FALLBACK: Calling Claude 3 Haiku (max_tokens: {max_tokens})")
+        print(f"🤖 FALLBACK: Calling Claude Opus 4 (max_tokens: {max_tokens})")
         response = anthropic_client.messages.create(
-            model="claude-3-haiku-20240307",
+            model="claude-opus-4",
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
-        print(f"✅ Claude Haiku API call successful (fallback)")
+        print(f"✅ Claude Opus 4 API call successful (fallback)")
         return response.content[0].text
     except Exception as e:
-        print(f"❌ Claude Haiku Error: {str(e)}")
-        raise Exception(f"Both Sonnet and Haiku failed: {str(e)}")
+        print(f"❌ Claude Opus 4 Error: {str(e)}")
+        raise Exception(f"Both Opus 4.5 and Opus 4 failed: {str(e)}")
 
 def call_gpt4(prompt, model="gpt-4o"):
     if not openai_api_key:
