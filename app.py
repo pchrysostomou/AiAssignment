@@ -148,10 +148,52 @@ if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
 else:
     print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
-# SIMPLIFIED GEMINI MODEL CONFIGURATION
-# With google-generativeai 0.8.3+, this standard alias works perfectly
-GEMINI_MODEL = "gemini-1.5-flash"
-print(f"🎯 GEMINI MODEL SET: {GEMINI_MODEL} (Standard Alias - Works with google-generativeai>=0.8.3)")
+# --- SMART GEMINI MODEL SELECTOR ---
+def get_working_gemini_model():
+    """
+    Probes Google API to find which model alias is actually valid.
+    Prevents 404 errors by testing aliases in order.
+    """
+    if not google_api_key: 
+        return "gemini-1.5-flash" # Fallback
+        
+    print("🔍 DIAGNOSTIC: Probing for valid Gemini model...")
+    
+    candidates = [
+        "models/gemini-1.5-pro-latest",
+        "gemini-1.5-pro",
+        "models/gemini-1.5-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-001",
+        "gemini-pro"
+    ]
+    
+    try:
+        # Ask Google what exists
+        available_models = [m.name for m in genai.list_models()]
+        print(f"📋 Server lists these models: {available_models}")
+        
+        # Check for matches
+        for cand in candidates:
+            if cand in available_models or f"models/{cand}" in available_models:
+                print(f"✅ FOUND MATCH: {cand}")
+                return cand
+                
+            # Fuzzy match check
+            match = next((m for m in available_models if cand.replace("models/", "") in m), None)
+            if match:
+                print(f"✅ FOUND FUZZY MATCH: {match}")
+                return match
+
+    except Exception as e:
+        print(f"⚠️ Model probing failed: {e}")
+
+    print("⚠️ Probe failed, using safe fallback: gemini-1.5-flash")
+    return "gemini-1.5-flash"
+
+# Initialize the model using the function
+GEMINI_MODEL = get_working_gemini_model()
+print(f"🎯 FINAL GEMINI MODEL SELECTED: {GEMINI_MODEL}")
 
 # MOCK EMAIL FUNCTION (For localhost development)
 def send_email_mock(user_email, subject, body):
@@ -340,7 +382,7 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions - SIMPLIFIED CONFIGURATION
+# AI Helper Functions - ROBUST CONFIGURATION
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -411,23 +453,34 @@ def call_gpt4(prompt, model="gpt-4o"):
 
 def call_gemini(prompt):
     """
-    SIMPLIFIED CONFIGURATION for Gemini:
-    Uses gemini-1.5-flash (standard alias that works with google-generativeai>=0.8.3)
-    
-    NO MORE 404 ERRORS - using standard model alias supported by updated library.
+    Robust Gemini caller using the auto-detected GEMINI_MODEL.
+    Includes emergency fallback logic.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
+    print(f"🤖 Calling Google Gemini ({GEMINI_MODEL})...")
+    
     try:
-        print(f"🤖 Calling Google Gemini ({GEMINI_MODEL}) - STANDARD ALIAS MODE")
         model = genai.GenerativeModel(GEMINI_MODEL)
         response = model.generate_content(prompt)
-        print(f"✅ Google Gemini ({GEMINI_MODEL}) API call successful")
+        print(f"✅ Google Gemini API call successful")
         return response.text
     except Exception as e:
-        print(f"❌ Gemini Error: {str(e)}")
-        raise Exception(f"Gemini failed: {str(e)}")
+        error_msg = str(e)
+        print(f"❌ Gemini Error: {error_msg}")
+        
+        # Emergency Fallback if the main model fails (e.g. 404)
+        if "404" in error_msg or "not found" in error_msg.lower():
+            print("🔄 404 Error detected. Attempting emergency fallback to 'gemini-pro'...")
+            try:
+                fallback_model = genai.GenerativeModel("gemini-pro")
+                response = fallback_model.generate_content(prompt)
+                return response.text
+            except Exception as e2:
+                raise Exception(f"Gemini Fallback also failed: {str(e2)}")
+        
+        raise Exception(f"Gemini failed: {error_msg}")
 
 def extract_score(text):
     """Extract score from agent response"""
@@ -613,19 +666,19 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - SIMPLIFIED STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - ULTIMATE FIX STRICT CONSENSUS 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    SIMPLIFIED STRICT CONSENSUS LOOP:
+    ULTIMATE FIX STRICT CONSENSUS LOOP:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Tier 1)
-    - Dean Logic (Gemini 1.5 Flash - Standard Alias)
+    - Dean Logic (Gemini - Smart Model Discovery with Emergency Fallback)
     - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - Target: 2,200 words total to ensure 2,000+ body words
     
-    NO MORE 404 ERRORS - using standard gemini-1.5-flash alias with updated library.
+    NO MORE 404 ERRORS - using smart model discovery with emergency fallback.
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - CLEAN DEPENDENCY STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - ULTIMATE FIX STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -691,7 +744,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # SIMPLIFIED STRICT CONSENSUS LOOP
+    # ULTIMATE FIX STRICT CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -706,7 +759,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # CRITIC 1: Dean Logic (Gemini 1.5 Flash)
+        # CRITIC 1: Dean Logic (Gemini with Smart Discovery)
         yield f"data: {json.dumps({'type': 'log', 'message': f'⚖️ Dean Logic (Gemini {GEMINI_MODEL}) evaluating...'})}\n\n"
         
         logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
@@ -1153,7 +1206,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (CLEAN DEPENDENCY 3-Agent Consensus System!)
+- The Architect: AI Essay Writer (ULTIMATE FIX 3-Agent Consensus System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1247,7 +1300,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with CLEAN DEPENDENCY 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with ULTIMATE FIX 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
