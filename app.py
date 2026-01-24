@@ -382,11 +382,33 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions - ROBUST CONFIGURATION
+# --- TOKEN TRUNCATION HELPER ---
+def truncate_text(text, max_tokens=10000):
+    """
+    Truncate text to approximate token limit.
+    Rule of thumb: 1 token ≈ 4 characters for English text.
+    """
+    max_chars = max_tokens * 4
+    if len(text) <= max_chars:
+        return text
+    
+    truncated = text[:max_chars]
+    print(f"⚠️ Text truncated from {len(text)} to {len(truncated)} characters (~{max_tokens} tokens)")
+    return truncated + "\n\n[Content truncated to fit token limit]"
+
+# AI Helper Functions - ROBUST CONFIGURATION WITH RATE LIMIT HANDLING
 def call_with_retry(func, max_retries=3):
+    """Enhanced retry logic with exponential backoff for rate limits"""
     for attempt in range(max_retries):
         try:
             return func()
+        except openai.RateLimitError as e:
+            if attempt == max_retries - 1:
+                print(f"❌ Rate limit exceeded after {max_retries} attempts")
+                raise
+            wait_time = 2 ** (attempt + 1)  # Exponential backoff: 2s, 4s, 8s
+            print(f"⚠️ Rate limit hit (attempt {attempt + 1}/{max_retries}). Waiting {wait_time}s...")
+            time.sleep(wait_time)
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
@@ -432,24 +454,28 @@ def call_claude(prompt, max_tokens=8000):
         print(f"❌ ALL CLAUDE MODELS FAILED: {str(e)}")
         raise Exception(f"All Claude models failed (Sonnet 20241022, Haiku): {str(e)}")
 
-def call_gpt4(prompt, model="gpt-4o"):
+def call_gpt4(prompt, model="gpt-4o", max_input_tokens=15000):
     """
-    HIGH-END CONFIGURATION for OpenAI:
-    MODEL: gpt-4o (active for consensus loop)
+    RATE-LIMIT-SAFE GPT-4o caller with token truncation and exponential backoff.
+    Truncates input to max_input_tokens to stay under 30k TPM limit.
     """
     if not openai_api_key:
         raise Exception("OpenAI API key not configured")
     
+    # Truncate prompt to stay under token limit
+    truncated_prompt = truncate_text(prompt, max_tokens=max_input_tokens)
+    
     def api_call():
-        print(f"🤖 Calling OpenAI GPT-4o - HIGH-END MODE")
+        print(f"🤖 Calling OpenAI GPT-4o (input ~{len(truncated_prompt)//4} tokens)")
         response = openai.chat.completions.create(
             model=model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": truncated_prompt}],
             temperature=0.3
         )
         print(f"✅ OpenAI GPT-4o API call successful")
         return response.choices[0].message.content
-    return call_with_retry(api_call)
+    
+    return call_with_retry(api_call, max_retries=3)
 
 def call_gemini(prompt):
     """
@@ -551,13 +577,17 @@ Return JSON format:
 
 def plagiarism_analyst_gpt(student_text, hunter_findings):
     """Step 2: GPT-4o analyzes similarity and paraphrasing"""
+    # Truncate student_text to prevent token overflow
+    truncated_student_text = truncate_text(student_text, max_tokens=8000)
+    truncated_hunter_findings = truncate_text(hunter_findings, max_tokens=5000)
+    
     prompt = f"""You are The Analyst, an expert in detecting plagiarism and paraphrasing.
 
 STUDENT TEXT:
-{student_text}
+{truncated_student_text}
 
 SOURCES FOUND BY HUNTER:
-{hunter_findings}
+{truncated_hunter_findings}
 
 TASKS:
 1. Compare student text with each source
@@ -579,7 +609,7 @@ Return JSON:
 }}"""
     
     try:
-        result = call_gpt4(prompt)
+        result = call_gpt4(prompt, max_input_tokens=14000)
         return result
     except Exception as e:
         return json.dumps({"overall_suspicion": 0, "analysis": [], "error": str(e)})
@@ -669,10 +699,10 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
 # TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP:
+    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH RATE LIMIT PROTECTION:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Writer + Self-Grader)
     - Dean Logic (Gemini - Smart Model Discovery)
-    - Chancellor GPT (GPT-4o)
+    - Chancellor GPT (GPT-4o with token truncation & exponential backoff)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - GROWTH MODE: Forces expansion when under target (prevents shrinking bug)
     - Target: 2,200 words total to ensure 2,000+ body words
@@ -703,6 +733,9 @@ def generate_essay_stream(instructions, word_count):
     # Initial draft by Prof. Quill (Claude 3.5 Sonnet 20241022)
     yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet 20241022) drafting initial essay...'})}\n\n"
     
+    # Truncate instructions to prevent token overflow
+    truncated_instructions = truncate_text(instructions, max_tokens=2000)
+    
     writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
 
 CRITICAL WORD COUNT TARGET:
@@ -729,7 +762,7 @@ SPARTAN STYLE RULES:
 - Minor stylistic imperfections for authenticity.
 
 INSTRUCTIONS:
-{instructions}
+{truncated_instructions}
 
 {research_context}
 
@@ -758,41 +791,35 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
+        # Truncate draft for grading to prevent token overflow
+        truncated_draft = truncate_text(current_draft, max_tokens=8000)
+        
         # CRITIC 1: Dean Logic (Gemini with Smart Discovery)
         yield f"data: {json.dumps({'type': 'log', 'message': f'⚖️ Dean Logic (Gemini {GEMINI_MODEL}) evaluating...'})}\n\n"
         
-        logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
+        logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade strictly.
 
-INSTRUCTIONS: {instructions}
+INSTRUCTIONS: {truncated_instructions}
 
-ESSAY: {current_draft}
+ESSAY: {truncated_draft}
 
-Evaluation criteria:
-- Overall coherence and persuasiveness
-- Citation appropriateness (smart citation logic applied)
-- Meeting assignment requirements
-- Academic integrity and originality
-- Word count: Target {word_count}+ body words (current: {current_word_count} body words)
-- DEDUCT 20 POINTS if ANY banned words detected
-- DEDUCT 15 POINTS if body word count is below {word_count}
+Criteria:
+- Coherence, citation logic, requirements met, originality
+- Word count: Target {word_count}+ (current: {current_word_count})
+- DEDUCT 20 if banned words found, 15 if under word count
 
-CRITICAL REQUIREMENT - ACTIVE CONTRIBUTION:
-If you score below 80, you MUST provide:
-1. Your score (0-100) in format: 'Score: [number]'
-2. Specific rewritten paragraphs or new citations/arguments that MUST be added
-3. Label your contributions clearly as "DEAN LOGIC REWRITES:"
+If score < 80, provide:
+1. Score (0-100) format: 'Score: [number]'
+2. Specific rewrites labeled "DEAN LOGIC REWRITES:"
 
-Example format if score < 80:
+Example:
 Score: 75
 
 DEAN LOGIC REWRITES:
-[Paragraph 3 should be replaced with:]
-"The evidence suggests that X is correlated with Y. Smith (2023) demonstrates this through longitudinal analysis..."
+[Paragraph 3 replace with:]
+"Evidence shows X correlates with Y. Smith (2023) demonstrates..."
 
-[Add new citation after paragraph 5:]
-"Furthermore, recent studies by Johnson et al. (2024) indicate..."
-
-Provide score and specific rewrites if needed."""
+Provide score and rewrites if needed."""
 
         try:
             logic_response = call_gemini(logic_prompt)
@@ -812,44 +839,35 @@ Provide score and specific rewrites if needed."""
             logic_response = "Error during grading"
             logic_rewrites = ""
         
-        # CRITIC 2: Chancellor GPT (GPT-4o)
+        # CRITIC 2: Chancellor GPT (GPT-4o with rate limit protection)
         yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT (GPT-4o) evaluating...'})}\n\n"
         
-        gpt_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade this essay with the highest standards.
+        gpt_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade with highest standards.
 
-INSTRUCTIONS: {instructions}
+INSTRUCTIONS: {truncated_instructions}
 
-ESSAY: {current_draft}
+ESSAY: {truncated_draft}
 
-Evaluation criteria:
-- Overall excellence and scholarly merit
-- Argumentation strength and evidence quality
-- Professional writing standards
-- Readability and engagement
-- Word count: Target {word_count}+ body words (current: {current_word_count} body words)
-- DEDUCT 20 POINTS if ANY banned words detected
-- DEDUCT 15 POINTS if body word count is below {word_count}
+Criteria:
+- Excellence, argumentation, writing standards, engagement
+- Word count: Target {word_count}+ (current: {current_word_count})
+- DEDUCT 20 if banned words, 15 if under count
 
-CRITICAL REQUIREMENT - ACTIVE CONTRIBUTION:
-If you score below 80, you MUST provide:
-1. Your score (0-100) in format: 'Score: [number]'
-2. Specific rewritten paragraphs or new citations/arguments that MUST be added
-3. Label your contributions clearly as "CHANCELLOR GPT REWRITES:"
+If score < 80, provide:
+1. Score (0-100) format: 'Score: [number]'
+2. Specific rewrites labeled "CHANCELLOR GPT REWRITES:"
 
-Example format if score < 80:
+Example:
 Score: 72
 
 CHANCELLOR GPT REWRITES:
-[Introduction needs stronger hook:]
-"In the contemporary discourse on X, scholars have increasingly recognized..."
+[Introduction needs hook:]
+"In contemporary discourse on X, scholars recognize..."
 
-[Paragraph 7 lacks evidence:]
-"According to Williams (2023), the correlation between A and B is statistically significant (p < 0.01)..."
-
-Provide score and specific rewrites if needed."""
+Provide score and rewrites if needed."""
 
         try:
-            gpt_response = call_gpt4(gpt_prompt)
+            gpt_response = call_gpt4(gpt_prompt, max_input_tokens=12000)
             score_gpt = extract_score(gpt_response)
             yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {score_gpt}/100'})}\n\n"
             
@@ -860,6 +878,11 @@ Provide score and specific rewrites if needed."""
             else:
                 gpt_rewrites = ""
                 
+        except openai.RateLimitError as e:
+            yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Chancellor GPT rate limit - retrying with backoff...'})}\n\n"
+            score_gpt = 0
+            gpt_response = "Rate limit error"
+            gpt_rewrites = ""
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Chancellor GPT error: {str(e)}'})}\n\n"
             score_gpt = 0
@@ -871,9 +894,9 @@ Provide score and specific rewrites if needed."""
         
         quill_grade_prompt = f"""You are Prof. Quill. Grade your own draft OBJECTIVELY.
 
-INSTRUCTIONS: {instructions}
+INSTRUCTIONS: {truncated_instructions}
 
-YOUR DRAFT: {current_draft}
+YOUR DRAFT: {truncated_draft}
 
 Target: {word_count}+ body words. Current: {current_word_count} body words.
 
@@ -954,7 +977,7 @@ Now you may polish the text, fix flow, and remove redundancy while keeping the c
         merge_prompt = f"""You are Prof. Quill.
 {mode_instruction}
 
-ORIGINAL INSTRUCTIONS: {instructions}
+ORIGINAL INSTRUCTIONS: {truncated_instructions}
 
 CURRENT DRAFT: {current_draft}
 
@@ -999,10 +1022,13 @@ Revise the essay following the STRICT RULES of the current Mode above.
 # TOOL C: The Oracle (AI Detection)
 def check_ai_content(text):
     """Use GPT-4 to detect AI-generated content"""
+    # Truncate text to prevent token overflow
+    truncated_text = truncate_text(text, max_tokens=10000)
+    
     prompt = f"""You are an AI content detection expert. Analyze the following text to determine if it was written by AI or a human.
 
 TEXT TO ANALYZE:
-{text}
+{truncated_text}
 
 Look for AI indicators:
 - Repetitive phrasing patterns
@@ -1020,7 +1046,7 @@ Return JSON format:
 }}"""
 
     try:
-        response = call_gpt4(prompt)
+        response = call_gpt4(prompt, max_input_tokens=12000)
         return response
     except Exception as e:
         return json.dumps({"error": str(e), "ai_probability": 0, "verdict": "ERROR"})
@@ -1031,13 +1057,17 @@ def grade_assignment(brief_text, essay_text):
     
     print("🎓 ROUND 1: Independent Grading...")
     
+    # Truncate texts to prevent token overflow
+    truncated_brief = truncate_text(brief_text, max_tokens=2000)
+    truncated_essay = truncate_text(essay_text, max_tokens=8000)
+    
     quill_prompt_r1 = f"""You are Prof. Quill, an expert academic evaluator. Analyze this student essay against the assignment brief.
 
 ASSIGNMENT BRIEF:
-{brief_text}
+{truncated_brief}
 
 STUDENT ESSAY:
-{essay_text}
+{truncated_essay}
 
 Evaluate independently:
 1. How well does it address the brief?
@@ -1052,10 +1082,10 @@ Provide:
     strict_prompt_r1 = f"""You are Dr. Strict, a harsh academic grader. Grade this essay strictly and independently.
 
 ASSIGNMENT BRIEF:
-{brief_text}
+{truncated_brief}
 
 STUDENT ESSAY:
-{essay_text}
+{truncated_essay}
 
 Evaluate independently:
 1. Grammar and writing quality
@@ -1070,10 +1100,10 @@ Provide:
     logic_prompt_r1 = f"""You are Dean Logic, the final academic authority. Provide an independent overall assessment.
 
 ASSIGNMENT BRIEF:
-{brief_text}
+{truncated_brief}
 
 STUDENT ESSAY:
-{essay_text}
+{truncated_essay}
 
 Provide independently:
 - Overall score (0-100)
@@ -1085,7 +1115,7 @@ Provide independently:
         quill_response_r1 = call_claude(quill_prompt_r1)
         quill_score_r1 = extract_score(quill_response_r1)
         
-        strict_response_r1 = call_gpt4(strict_prompt_r1)
+        strict_response_r1 = call_gpt4(strict_prompt_r1, max_input_tokens=12000)
         strict_score_r1 = extract_score(strict_response_r1)
         
         logic_response_r1 = call_gemini(logic_prompt_r1)
@@ -1095,19 +1125,24 @@ Provide independently:
         
         print("🎓 ROUND 2: Consensus Phase...")
         
+        # Truncate feedback for round 2 to prevent token overflow
+        truncated_quill_r1 = truncate_text(quill_response_r1, max_tokens=2000)
+        truncated_strict_r1 = truncate_text(strict_response_r1, max_tokens=2000)
+        truncated_logic_r1 = truncate_text(logic_response_r1, max_tokens=2000)
+        
         quill_prompt_r2 = f"""You are Prof. Quill. You've read the feedback from Dr. Strict and Dean Logic.
 
 YOUR INITIAL ASSESSMENT:
 Score: {quill_score_r1}/100
-{quill_response_r1}
+{truncated_quill_r1}
 
 DR. STRICT'S ASSESSMENT:
 Score: {strict_score_r1}/100
-{strict_response_r1}
+{truncated_strict_r1}
 
 DEAN LOGIC'S ASSESSMENT:
 Score: {logic_score_r1}/100
-{logic_response_r1}
+{truncated_logic_r1}
 
 After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
 - Revised score (0-100)
@@ -1118,15 +1153,15 @@ After reading your colleagues' feedback, reconsider your evaluation. Adjust your
 
 YOUR INITIAL ASSESSMENT:
 Score: {strict_score_r1}/100
-{strict_response_r1}
+{truncated_strict_r1}
 
 PROF. QUILL'S ASSESSMENT:
 Score: {quill_score_r1}/100
-{quill_response_r1}
+{truncated_quill_r1}
 
 DEAN LOGIC'S ASSESSMENT:
 Score: {logic_score_r1}/100
-{logic_response_r1}
+{truncated_logic_r1}
 
 After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
 - Revised score (0-100)
@@ -1137,15 +1172,15 @@ After reading your colleagues' feedback, reconsider your evaluation. Adjust your
 
 YOUR INITIAL ASSESSMENT:
 Score: {logic_score_r1}/100
-{logic_response_r1}
+{truncated_logic_r1}
 
 PROF. QUILL'S ASSESSMENT:
 Score: {quill_score_r1}/100
-{quill_response_r1}
+{truncated_quill_r1}
 
 DR. STRICT'S ASSESSMENT:
 Score: {strict_score_r1}/100
-{strict_response_r1}
+{truncated_strict_r1}
 
 After reading your colleagues' feedback, reconsider your evaluation. Adjust your score if their points are valid. Provide:
 - Revised score (0-100)
@@ -1155,7 +1190,7 @@ After reading your colleagues' feedback, reconsider your evaluation. Adjust your
         quill_response_r2 = call_claude(quill_prompt_r2)
         quill_score_r2 = extract_score(quill_response_r2)
         
-        strict_response_r2 = call_gpt4(strict_prompt_r2)
+        strict_response_r2 = call_gpt4(strict_prompt_r2, max_input_tokens=12000)
         strict_score_r2 = extract_score(strict_response_r2)
         
         logic_response_r2 = call_gemini(logic_prompt_r2)
