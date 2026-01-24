@@ -426,25 +426,35 @@ def call_claude(prompt, max_tokens=8000):
         raise Exception(f"Both Sonnet and Haiku failed: {str(e)}")
 
 def call_gpt4(prompt, model="gpt-4o"):
+    """
+    Call OpenAI GPT-4o with retry logic and error handling.
+    """
     if not openai_api_key:
         raise Exception("OpenAI API key not configured")
     
     def api_call():
+        print(f"🤖 Calling OpenAI {model}...")
         response = openai.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
+        print(f"✅ OpenAI {model} API call successful")
         return response.choices[0].message.content
     return call_with_retry(api_call)
 
 def call_gemini(prompt):
+    """
+    Call Google Gemini with retry logic and error handling.
+    """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
     def api_call():
+        print(f"🤖 Calling Google Gemini 1.5 Pro...")
         model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(prompt)
+        print(f"✅ Google Gemini API call successful")
         return response.text
     return call_with_retry(api_call)
 
@@ -636,9 +646,9 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - TRIPLE AGENT CONSENSUS WRITING SYSTEM
+# TOOL B: The Architect - QUAD AGENT CONSENSUS WRITING SYSTEM (4 AGENTS)
 def generate_essay_stream(instructions, word_count):
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening - TRIPLE AGENT CONSENSUS MODE ({word_count} words)...'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': f'🎓 The Academic Board convening - QUAD AGENT CONSENSUS MODE ({word_count} words)...'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -711,11 +721,11 @@ Remember: Write {target_total_words} words total to ensure {word_count}+ body wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # TRIPLE AGENT CONSENSUS LOOP - Minimum 5 rounds
+    # QUAD AGENT CONSENSUS LOOP - Minimum 5 rounds, ALL 4 AGENTS MUST SCORE 80+
     MIN_ROUNDS = 5
     MAX_ROUNDS = 15
     
-    all_scores = {'quill': [], 'strict': [], 'logic': []}
+    all_scores = {'quill': [], 'strict': [], 'logic': [], 'chancellor': []}
     best_draft = current_draft
     best_avg_score = 0
     
@@ -821,22 +831,55 @@ Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback.
             logic_response = "Error during grading"
             all_scores['logic'].append(0)
         
-        # Calculate average score for this round
-        avg_score = round((quill_score + strict_score + logic_score) / 3)
+        # AGENT 4: Chancellor GPT (OpenAI GPT-4o) - Final Auditor
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT auditing final quality...'})}\n\n"
+        
+        chancellor_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade this essay with the highest standards.
+
+INSTRUCTIONS: {instructions}
+
+ESSAY: {current_draft}
+
+Evaluation criteria:
+- Overall excellence and scholarly merit
+- Argumentation strength and evidence quality
+- Professional writing standards
+- Readability and engagement
+- Word count: Target {word_count}+ body words (current: {current_word_count} body words)
+- DEDUCT 20 POINTS if ANY banned words detected
+- DEDUCT 15 POINTS if body word count is below {word_count}
+
+As the final auditor, ensure this essay meets the highest academic standards. Be thorough but fair.
+
+Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback."""
+
+        try:
+            chancellor_response = call_gpt4(chancellor_prompt)
+            chancellor_score = extract_score(chancellor_response)
+            all_scores['chancellor'].append(chancellor_score)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {chancellor_score}/100'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Chancellor GPT error: {str(e)}'})}\n\n"
+            chancellor_score = 0
+            chancellor_response = "Error during grading"
+            all_scores['chancellor'].append(0)
+        
+        # Calculate average score for this round (ALL 4 AGENTS)
+        avg_score = round((quill_score + strict_score + logic_score + chancellor_score) / 4)
         yield f"data: {json.dumps({'type': 'score', 'round': round_num, 'score': avg_score})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_num} Average: {avg_score}/100 (Quill: {quill_score}, Strict: {strict_score}, Logic: {logic_score})'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_num} Average: {avg_score}/100 (Quill: {quill_score}, Strict: {strict_score}, Logic: {logic_score}, Chancellor: {chancellor_score})'})}\n\n"
         
         # Track best draft
         if avg_score > best_avg_score:
             best_avg_score = avg_score
             best_draft = current_draft
         
-        # STRICT TERMINATION CRITERIA
+        # STRICT TERMINATION CRITERIA - ALL 4 AGENTS MUST SCORE 80+
         # 1. Minimum 5 rounds completed
         # 2. Word count >= 2000 body words
-        # 3. ALL THREE agents score 80+ in the SAME round
-        if round_num >= MIN_ROUNDS and current_word_count >= word_count and quill_score >= 80 and strict_score >= 80 and logic_score >= 80:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 CONSENSUS ACHIEVED! All 3 agents agree (80+) after {round_num} rounds!'})}\n\n"
+        # 3. ALL FOUR agents score 80+ in the SAME round
+        if round_num >= MIN_ROUNDS and current_word_count >= word_count and quill_score >= 80 and strict_score >= 80 and logic_score >= 80 and chancellor_score >= 80:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'🎉 CONSENSUS ACHIEVED! All 4 agents agree (80+) after {round_num} rounds!'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
             break
         
@@ -846,8 +889,8 @@ Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback.
             current_draft = best_draft
             break
         
-        # REVISION PHASE - All 3 agents contribute feedback
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising based on triple-agent feedback...'})}\n\n"
+        # REVISION PHASE - All 4 agents contribute feedback
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill revising based on quad-agent feedback...'})}\n\n"
         
         word_count_guidance = ""
         if current_word_count < word_count:
@@ -855,7 +898,7 @@ Provide a score (0-100) in format: 'Score: [number]' followed by brief feedback.
         elif current_word_count > word_count * 1.15:
             word_count_guidance = f"\n\nNote: Current body word count ({current_word_count}) exceeds target ({word_count}). Tighten the essay by removing redundancy while keeping all key points."
         
-        refine_prompt = f"""Revise the essay based on TRIPLE-AGENT FEEDBACK. Apply SPARTAN ACADEMIC protocol.
+        refine_prompt = f"""Revise the essay based on QUAD-AGENT FEEDBACK (4 agents). Apply SPARTAN ACADEMIC protocol.
 
 CRITICAL WORD COUNT RULES (MUST FOLLOW):
 1. TARGET: {target_total_words} words TOTAL (to ensure {word_count}+ body words)
@@ -892,7 +935,10 @@ DR. STRICT FEEDBACK (Score: {strict_score}/100):
 DEAN LOGIC FEEDBACK (Score: {logic_score}/100):
 {logic_response}
 
-Improve the essay while hitting {target_total_words} total words (ensuring {word_count}+ body words after references). Address ALL three agents' feedback. Apply smart citations. Zero banned words. Zero fluff."""
+CHANCELLOR GPT FEEDBACK (Score: {chancellor_score}/100):
+{chancellor_response}
+
+Improve the essay while hitting {target_total_words} total words (ensuring {word_count}+ body words after references). Address ALL FOUR agents' feedback. Apply smart citations. Zero banned words. Zero fluff."""
 
         try:
             current_draft = call_claude(refine_prompt, max_tokens=8000)
@@ -1188,7 +1234,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer
+- The Architect: AI Essay Writer (Now with 4-Agent Consensus!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1283,7 +1329,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with dynamic pricing and citation verification
+- The Architect: AI essay writer with 4-agent consensus system (Prof. Quill, Dr. Strict, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking (now £10)
