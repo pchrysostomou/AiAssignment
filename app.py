@@ -717,18 +717,14 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH HEARTBEAT
+# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH HEARTBEAT + WORD COUNT ENFORCEMENT
 def generate_essay_stream(instructions, word_count):
     """
-    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH HEARTBEAT & PROGRESS:
-    - Prof. Quill (Claude 3.5 Sonnet 20241022 - Writer + Self-Grader)
-    - Dean Logic (Gemini - Smart Model Discovery)
-    - Chancellor GPT (GPT-4o with token truncation & exponential backoff)
-    - Loop continues until ALL 3 agents score 80+ in SAME round
-    - GROWTH MODE: Forces expansion when under target (prevents shrinking bug)
+    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH CRITICAL FIXES:
+    - WORD COUNT ENFORCEMENT: Minimum 95% of target (1,900/2,000) required before consensus
+    - GUARANTEED EXIT: Round 14+ triggers automatic finalization to prevent timeout
     - HEARTBEAT: Sends ping every 10 seconds to prevent proxy timeouts
     - PROGRESS: Shows percentage completion (Round X/15 - Y%)
-    - Target: 2,200 words total to ensure 2,000+ body words
     """
     # Setup heartbeat mechanism
     stop_heartbeat = threading.Event()
@@ -743,12 +739,15 @@ def generate_essay_stream(instructions, word_count):
     heartbeat_thread.start()
     
     try:
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - GROWTH MODE + SELF-REFLECTION (3 Premium Agents)'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - WORD COUNT ENFORCEMENT + GUARANTEED EXIT'})}\n\n"
         yield f"data: {json.dumps({'type': 'log', 'message': '💓 Heartbeat enabled: Connection will stay alive during long operations'})}\n\n"
         
-        # Target 2200 words total to ensure 2000+ body words after references
+        # CRITICAL: Minimum word count threshold (95% of target)
+        MIN_WORD_COUNT = int(word_count * 0.95)  # 1,900 words for 2,000 target
         target_total_words = 2200
         MAX_ROUNDS = 15
+        
+        yield f"data: {json.dumps({'type': 'log', 'message': f'📏 Word Count Enforcement: Minimum {MIN_WORD_COUNT} words required (95% of {word_count})'})}\n\n"
         
         # Research Phase
         yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Research'})}\n\n"
@@ -825,7 +824,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         while heartbeat_queue:
             yield heartbeat_queue.pop(0)
         
-        # GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP
+        # GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH WORD COUNT ENFORCEMENT
         best_draft = current_draft
         best_avg_score = 0
         round_count = 0
@@ -847,6 +846,14 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
             # Send any queued heartbeats
             while heartbeat_queue:
                 yield heartbeat_queue.pop(0)
+            
+            # CRITICAL FIX #2: GUARANTEED EXIT AT ROUND 14+
+            if round_count >= 14:
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ ROUND {round_count}: Approaching timeout limit. Triggering automatic finalization...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'progress', 'current': MAX_ROUNDS, 'total': MAX_ROUNDS, 'percentage': 100, 'stage': 'Auto-Finalize'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 AUTO-FINALIZE: Using best draft to prevent timeout (Score: {best_avg_score}/100, Words: {count_words(best_draft)})'})}\n\n"
+                current_draft = best_draft
+                break
             
             # Truncate draft for grading to prevent token overflow
             truncated_draft = truncate_text(current_draft, max_tokens=8000)
@@ -1000,14 +1007,23 @@ Be harsh on yourself."""
                 best_avg_score = avg_score
                 best_draft = current_draft
             
-            # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+
-            if score_logic >= 80 and score_gpt >= 80 and score_quill >= 80:
+            # CRITICAL FIX #1: WORD COUNT ENFORCEMENT - Consensus requires BOTH score AND word count
+            word_count_met = current_word_count >= MIN_WORD_COUNT
+            
+            if not word_count_met:
+                yield f"data: {json.dumps({'type': 'log', 'message': f'❌ WORD COUNT NOT MET: {current_word_count}/{MIN_WORD_COUNT} minimum. Forcing expansion...'})}\n\n"
+            
+            # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+ AND WORD COUNT >= 95% TARGET
+            if score_logic >= 80 and score_gpt >= 80 and score_quill >= 80 and word_count_met:
                 yield f"data: {json.dumps({'type': 'progress', 'current': round_count, 'total': MAX_ROUNDS, 'percentage': 100, 'stage': 'Complete'})}\n\n"
-                yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All 3 agents agree (80+) after {round_count} rounds!'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All 3 agents agree (80+) AND word count met ({current_word_count}/{MIN_WORD_COUNT})!'})}\n\n"
                 yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
                 break
             else:
-                yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
+                if not word_count_met:
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS: Word count too low ({current_word_count}/{MIN_WORD_COUNT}). Must expand!'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS: Scores insufficient (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
             
             # Stop if max rounds reached
             if round_count >= MAX_ROUNDS:
@@ -1020,29 +1036,48 @@ Be harsh on yourself."""
             while heartbeat_queue:
                 yield heartbeat_queue.pop(0)
             
-            # --- SMART MODE SWITCHING: GROWTH VS REFINEMENT ---
-            if current_word_count < word_count:
-                # PHASE 1: AGGRESSIVE GROWTH (Under Target)
-                # Force the AI to EXPAND only. Forbidden to delete text.
+            # --- SMART MODE SWITCHING: GROWTH VS REFINEMENT WITH WORD COUNT PRIORITY ---
+            if current_word_count < MIN_WORD_COUNT:
+                # PHASE 1: AGGRESSIVE GROWTH (Under Minimum Threshold)
+                # ABSOLUTE PRIORITY: Reach minimum word count
+                deficit = MIN_WORD_COUNT - current_word_count
+                mode_instruction = f"""
+*** CRITICAL WORD COUNT ENFORCEMENT (HIGHEST PRIORITY) ***
+Current: {current_word_count} words. MINIMUM REQUIRED: {MIN_WORD_COUNT} words.
+DEFICIT: {deficit} words MUST BE ADDED.
+
+ABSOLUTE RULES (NON-NEGOTIABLE):
+1. 🚫 DO NOT DELETE, shorten, or summarize ANY existing text. Keep everything.
+2. ✅ YOU MUST WRITE AT LEAST {deficit} NEW words to reach the minimum.
+3. Method: EXPAND every paragraph with:
+   - Concrete examples and case studies
+   - Statistical evidence and data
+   - Scholarly analysis and interpretation
+   - Counterarguments and rebuttals
+4. If critics found errors, fix them by ADDING clarification, NOT removing text.
+5. This is a PAID requirement ({word_count} words). User expects full delivery.
+
+IGNORE score improvements until word count >= {MIN_WORD_COUNT}.
+"""
+            elif current_word_count < word_count:
+                # PHASE 2: MODERATE GROWTH (Between minimum and target)
                 deficit = word_count - current_word_count
                 mode_instruction = f"""
-*** GROWTH MODE ACTIVATED (URGENT) ***
+*** GROWTH MODE (APPROACHING TARGET) ***
 Current: {current_word_count} words. Target: {word_count} words.
-MISSING: {deficit} words.
+REMAINING: {deficit} words to reach full target.
 
-STRICT RULES:
-1. 🚫 DO NOT DELETE, shorten, or summarize existing text. Keep it all.
-2. ✅ YOU MUST WRITE {deficit} NEW words minimum.
-3. Method: Take every existing paragraph and EXPAND it with examples, evidence, and analysis.
-4. If critics found errors, fix them by ADDING explanation, not removing text.
+RULES:
+1. 🚫 DO NOT DELETE or shorten existing text.
+2. ✅ Add {deficit} more words through expansion.
+3. Balance growth with quality improvements from critics.
 """
             else:
-                # PHASE 2: REFINEMENT (Target Met)
-                # Now allowed to edit/polish.
+                # PHASE 3: REFINEMENT (Target Met)
                 mode_instruction = f"""
-*** REFINEMENT MODE ACTIVATED ***
+*** REFINEMENT MODE ***
 Target met ({current_word_count}/{word_count}).
-Now you may polish the text, fix flow, and remove redundancy while keeping the count above {word_count}.
+Now polish the text while keeping count above {word_count}.
 """
 
             # REVISION PHASE - Prof. Quill MERGES critic contributions
@@ -1057,8 +1092,8 @@ ORIGINAL INSTRUCTIONS: {truncated_instructions}
 CURRENT DRAFT: {current_draft}
 
 CRITICS' FEEDBACK:
-Dean Logic: {logic_rewrites if logic_rewrites else "Expand content."}
-Chancellor GPT: {gpt_rewrites if gpt_rewrites else "Expand content."}
+Dean Logic: {logic_rewrites if logic_rewrites else "Expand content with academic depth."}
+Chancellor GPT: {gpt_rewrites if gpt_rewrites else "Expand content with academic depth."}
 
 EXECUTION:
 Revise the essay following the STRICT RULES of the current Mode above.
