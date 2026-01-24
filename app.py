@@ -148,6 +148,57 @@ if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
 else:
     print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
+# AUTO-DISCOVERY FUNCTION FOR GEMINI MODEL SELECTION
+def get_best_gemini_model():
+    """
+    Auto-Discovery function to prevent 404 errors.
+    Lists all available Gemini models and selects the best one based on priority logic.
+    
+    Priority Logic:
+    1. Try to find Pro 1.5 (highest quality)
+    2. Then Flash 1.5 (fast and efficient)
+    3. Then Pro 1.0 (stable fallback)
+    
+    With billing enabled, should auto-detect and select Pro model.
+    """
+    try:
+        # List all available models that support content generation
+        available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        print(f"🔍 Available Gemini Models: {available}")
+        
+        # Priority 1: Try to find Pro 1.5 (highest quality)
+        for model_name in available:
+            if 'gemini-1.5-pro' in model_name.lower():
+                print(f"✅ Auto-Selected: {model_name} (Priority 1: Pro 1.5)")
+                return model_name.replace('models/', '')  # Remove 'models/' prefix if present
+        
+        # Priority 2: Try to find Flash 1.5 (fast and efficient)
+        for model_name in available:
+            if 'gemini-1.5-flash' in model_name.lower():
+                print(f"✅ Auto-Selected: {model_name} (Priority 2: Flash 1.5)")
+                return model_name.replace('models/', '')
+        
+        # Priority 3: Fallback to Pro 1.0 (stable)
+        for model_name in available:
+            if 'gemini-pro' in model_name.lower() and '1.5' not in model_name.lower():
+                print(f"✅ Auto-Selected: {model_name} (Priority 3: Pro 1.0)")
+                return model_name.replace('models/', '')
+        
+        # Emergency fallback: Use first available model
+        if available:
+            fallback_model = available[0].replace('models/', '')
+            print(f"⚠️ Auto-Selected: {fallback_model} (Emergency: First available)")
+            return fallback_model
+        
+        # Ultimate fallback: Use hardcoded stable model
+        print(f"⚠️ No models found via API, using hardcoded fallback: gemini-pro")
+        return 'gemini-pro'
+        
+    except Exception as e:
+        print(f"❌ Auto-Discovery Error: {str(e)}")
+        print(f"⚠️ Using hardcoded fallback: gemini-pro")
+        return 'gemini-pro'
+
 # MOCK EMAIL FUNCTION (For localhost development)
 def send_email_mock(user_email, subject, body):
     """Mock email sender - prints to console instead of sending real emails"""
@@ -335,7 +386,7 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions - HIGH-END CONFIGURATION
+# AI Helper Functions - AUTO-DISCOVERY CONFIGURATION
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -350,8 +401,6 @@ def call_claude(prompt, max_tokens=8000):
     HIGH-END CONFIGURATION for Claude:
     PRIMARY: claude-3-5-sonnet-20241022 (Tier 1 High-Quality)
     SAFETY NET: claude-3-haiku-20240307 (only if Sonnet fails - prevents crashes)
-    
-    With billing active and Tier 1 limits, Sonnet should work perfectly.
     """
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
@@ -408,24 +457,27 @@ def call_gpt4(prompt, model="gpt-4o"):
 
 def call_gemini(prompt):
     """
-    HIGH-END CONFIGURATION for Gemini:
-    MODEL: gemini-1.5-pro-latest (FULL REASONING POWER)
+    AUTO-DISCOVERY CONFIGURATION for Gemini:
+    Uses get_best_gemini_model() to automatically select the best available model.
     
-    With billing account linked, gemini-1.5-pro is fully unlocked.
-    NO downgrade to gemini-pro. We want the full reasoning power of 1.5 Pro.
+    With billing enabled, should auto-detect and select Pro 1.5 model.
+    NO MORE 404 ERRORS - model is discovered at runtime.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
     try:
-        print(f"🤖 Calling Google Gemini 1.5 Pro (latest) - HIGH-END MODE")
-        model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        # AUTO-DISCOVERY: Get the best available Gemini model
+        dean_logic_model = get_best_gemini_model()
+        
+        print(f"🤖 Calling Google Gemini ({dean_logic_model}) - AUTO-DISCOVERY MODE")
+        model = genai.GenerativeModel(dean_logic_model)
         response = model.generate_content(prompt)
-        print(f"✅ Google Gemini 1.5 Pro (latest) API call successful")
+        print(f"✅ Google Gemini ({dean_logic_model}) API call successful")
         return response.text
     except Exception as e:
-        print(f"❌ Gemini 1.5 Pro Error: {str(e)}")
-        raise Exception(f"Gemini 1.5 Pro failed: {str(e)}")
+        print(f"❌ Gemini Error: {str(e)}")
+        raise Exception(f"Gemini failed: {str(e)}")
 
 def extract_score(text):
     """Extract score from agent response"""
@@ -611,19 +663,20 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - HIGH-END STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - AUTO-DISCOVERY STRICT CONSENSUS 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    HIGH-END STRICT CONSENSUS LOOP:
+    AUTO-DISCOVERY STRICT CONSENSUS LOOP:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Tier 1)
-    - Dean Logic (Gemini 1.5 Pro latest - FULL REASONING POWER)
+    - Dean Logic (Gemini AUTO-DISCOVERY - selects best available model)
     - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - Target: 2,200 words total to ensure 2,000+ body words
     
-    With billing active and Tier 1 limits, no 404 errors expected.
+    With billing active, Gemini should auto-detect Pro 1.5 model.
+    NO MORE 404 ERRORS - models are discovered at runtime.
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - HIGH-END STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - AUTO-DISCOVERY STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -689,7 +742,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # HIGH-END STRICT CONSENSUS LOOP
+    # AUTO-DISCOVERY STRICT CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -704,8 +757,8 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # CRITIC 1: Dean Logic (Gemini 1.5 Pro latest - FULL REASONING POWER)
-        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro latest - FULL REASONING) evaluating...'})}\n\n"
+        # CRITIC 1: Dean Logic (Gemini AUTO-DISCOVERY)
+        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini AUTO-DISCOVERY) evaluating...'})}\n\n"
         
         logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
 
@@ -1151,7 +1204,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (HIGH-END 3-Agent Consensus System!)
+- The Architect: AI Essay Writer (AUTO-DISCOVERY 3-Agent Consensus System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1245,7 +1298,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with HIGH-END 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with AUTO-DISCOVERY 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
