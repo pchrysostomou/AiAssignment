@@ -335,7 +335,7 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions - HARDCODED STABLE CONFIGURATION
+# AI Helper Functions - DYNAMIC LATEST POINTER CONFIGURATION
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -406,20 +406,20 @@ def call_gpt4(prompt, model="gpt-4o"):
 
 def call_gemini(prompt):
     """
-    HARDCODED STABLE CONFIGURATION for Gemini:
-    FORCE USE: gemini-1.5-pro (stable, works with paid billing)
+    DYNAMIC LATEST POINTER CONFIGURATION for Gemini:
+    USE: gemini-1.5-pro-latest (dynamic pointer to newest 1.5 Pro version)
     
-    NO AUTO-DISCOVERY - using hardcoded stable model name only.
-    With paid billing enabled, gemini-1.5-pro has unlimited quota.
+    Requires google-generativeai>=0.8.3 to recognize 1.5 models.
+    The '-latest' suffix automatically maps to the newest available 1.5 Pro version.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
-    # FORCE THE USE OF STABLE 1.5 PRO MODEL
-    dean_logic_model = "gemini-1.5-pro"
+    # Use 'latest' which maps to the newest available 1.5 Pro version
+    dean_logic_model = "gemini-1.5-pro-latest"
     
     try:
-        print(f"🤖 Calling Google Gemini ({dean_logic_model}) - HARDCODED STABLE MODE")
+        print(f"🤖 Calling Google Gemini ({dean_logic_model}) - DYNAMIC LATEST POINTER MODE")
         model = genai.GenerativeModel(dean_logic_model)
         response = model.generate_content(prompt)
         print(f"✅ Google Gemini ({dean_logic_model}) API call successful")
@@ -612,19 +612,19 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - HARDCODED STABLE STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - DYNAMIC LATEST POINTER STRICT CONSENSUS 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    HARDCODED STABLE STRICT CONSENSUS LOOP:
+    DYNAMIC LATEST POINTER STRICT CONSENSUS LOOP:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Tier 1)
-    - Dean Logic (Gemini 1.5 Pro - HARDCODED STABLE)
+    - Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER)
     - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - Target: 2,200 words total to ensure 2,000+ body words
     
-    NO AUTO-DISCOVERY - using hardcoded gemini-1.5-pro only.
+    Uses gemini-1.5-pro-latest which maps to newest available 1.5 Pro version.
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - HARDCODED STABLE STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - DYNAMIC LATEST POINTER STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -690,7 +690,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # HARDCODED STABLE STRICT CONSENSUS LOOP
+    # DYNAMIC LATEST POINTER STRICT CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -705,8 +705,8 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # CRITIC 1: Dean Logic (Gemini 1.5 Pro - HARDCODED STABLE)
-        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro - HARDCODED STABLE) evaluating...'})}\n\n"
+        # CRITIC 1: Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER)
+        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER) evaluating...'})}\n\n"
         
         logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
 
@@ -1152,7 +1152,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (HARDCODED STABLE 3-Agent Consensus System!)
+- The Architect: AI Essay Writer (DYNAMIC LATEST POINTER 3-Agent Consensus System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1246,7 +1246,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with HARDCODED STABLE 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with DYNAMIC LATEST POINTER 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
