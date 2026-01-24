@@ -33,7 +33,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///aca
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['REPORTS_FOLDER'] = 'reports'
-app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # INCREASED TO 25MB
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25MB
 
 # Add Stripe Publishable Key to config so templates can access it
 app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
@@ -117,7 +117,7 @@ PRICING = {
 # API Credentials Initialization with Validation
 anthropic_api_key = os.getenv('ANTHROPIC_API_KEY', '')
 if anthropic_api_key:
-    # Initialize with default_headers for API version compatibility
+    # Initialize with STRICT API version header
     anthropic_client = anthropic.Anthropic(
         api_key=anthropic_api_key,
         default_headers={"anthropic-version": "2023-06-01"}
@@ -304,11 +304,12 @@ def parse_uploaded_file(file_path, filename):
     """Parse uploaded file and extract text"""
     return extract_text_from_file(file_path, filename)
 
-# Google Custom Search Integration
+# Google Custom Search Integration - IMPROVED QUERY BROADENING
 def google_search(query, num_results=5):
     """
     Perform Google Custom Search using the configured API key and CSE ID.
     Returns a list of search results with titles, links, and snippets.
+    IMPROVED: Broader query generation to avoid 'No search results' issue.
     """
     # Verify both API key and CSE ID are valid strings
     if not google_api_key or not GOOGLE_CSE_ID or GOOGLE_CSE_ID == '':
@@ -316,21 +317,26 @@ def google_search(query, num_results=5):
         return []
     
     try:
-        # Extract key terms from query (remove common words, limit length)
+        # IMPROVED: Extract broader key terms (more inclusive filtering)
         words = query.split()
-        # Take first 10 meaningful words (skip very short words)
-        key_words = [w for w in words if len(w) > 3][:10]
-        search_query = ' '.join(key_words) if key_words else query[:100]
+        # Take first 5-8 meaningful words (reduced strictness, broader query)
+        key_words = [w for w in words if len(w) > 2][:8]  # Changed from >3 to >2, increased from 10 to 8
+        
+        # If too few keywords, use first 100 chars of original query
+        if len(key_words) < 3:
+            search_query = query[:100]
+        else:
+            search_query = ' '.join(key_words)
         
         url = "https://www.googleapis.com/customsearch/v1"
         params = {
             'key': str(google_api_key).strip(),
-            'cx': str(GOOGLE_CSE_ID).strip(),  # Force string and strip whitespace
+            'cx': str(GOOGLE_CSE_ID).strip(),
             'q': search_query,
             'num': num_results
         }
         
-        print(f"🔍 Google Search Query: '{search_query}'")
+        print(f"🔍 Google Search Query (BROADENED): '{search_query}'")
         print(f"🔍 Using CSE ID: '{GOOGLE_CSE_ID}' (length: {len(GOOGLE_CSE_ID)})")
         
         response = requests.get(url, params=params, timeout=10)
@@ -371,21 +377,53 @@ def call_with_retry(func, max_retries=3):
             time.sleep(2 * (attempt + 1))
 
 def call_claude(prompt, max_tokens=8000):
-    """Call Claude Sonnet 3.5 - Tier 1 optimized"""
+    """
+    Call Claude Sonnet 3.5 with 404 retry logic and Haiku fallback.
+    PRIMARY: claude-3-5-sonnet-20241022
+    FALLBACK: claude-3-haiku-20240307 (only after 3 failed Sonnet attempts)
+    """
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
     
-    def api_call():
-        print(f"🤖 Calling Claude Sonnet 3.5 (max_tokens: {max_tokens})")
+    # PRIMARY MODEL: Claude 3.5 Sonnet with retry logic
+    for attempt in range(3):
+        try:
+            print(f"🤖 Calling Claude Sonnet 3.5 (attempt {attempt + 1}/3, max_tokens: {max_tokens})")
+            response = anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_tokens,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            print(f"✅ Claude Sonnet 3.5 API call successful")
+            return response.content[0].text
+        except anthropic.NotFoundError as e:
+            print(f"❌ Claude Sonnet 404 Error (attempt {attempt + 1}/3): {str(e)}")
+            if attempt < 2:
+                print(f"⏳ Waiting 5 seconds before retry...")
+                time.sleep(5)
+            else:
+                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
+        except Exception as e:
+            print(f"❌ Claude Sonnet Error (attempt {attempt + 1}/3): {str(e)}")
+            if attempt < 2:
+                print(f"⏳ Waiting 5 seconds before retry...")
+                time.sleep(5)
+            else:
+                print(f"⚠️ Sonnet failed 3 times, falling back to Haiku...")
+    
+    # FALLBACK MODEL: Claude 3 Haiku (only if Sonnet fails 3 times)
+    try:
+        print(f"🤖 FALLBACK: Calling Claude 3 Haiku (max_tokens: {max_tokens})")
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-haiku-20240307",
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
-        print(f"✅ Claude API call successful")
+        print(f"✅ Claude Haiku API call successful (fallback)")
         return response.content[0].text
-    
-    return call_with_retry(api_call)
+    except Exception as e:
+        print(f"❌ Claude Haiku Error: {str(e)}")
+        raise Exception(f"Both Sonnet and Haiku failed: {str(e)}")
 
 def call_gpt4(prompt, model="gpt-4o"):
     if not openai_api_key:
