@@ -3,6 +3,7 @@ import json
 import time
 import re
 import requests
+import threading
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, Response, stream_with_context, jsonify, session, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -541,6 +542,26 @@ def check_url_status(url):
     except:
         return False
 
+# --- HEARTBEAT MECHANISM FOR SSE KEEPALIVE ---
+class HeartbeatThread(threading.Thread):
+    """
+    Background thread that sends heartbeat pings every 10 seconds
+    to keep SSE connection alive and prevent proxy timeouts.
+    """
+    def __init__(self, stop_event, callback):
+        super().__init__(daemon=True)
+        self.stop_event = stop_event
+        self.callback = callback
+        
+    def run(self):
+        while not self.stop_event.is_set():
+            time.sleep(10)  # Send heartbeat every 10 seconds
+            if not self.stop_event.is_set():
+                try:
+                    self.callback()
+                except:
+                    pass  # Ignore errors if stream is closed
+
 # TOOL A: The Detective - 3-Agent Plagiarism Team
 def plagiarism_hunter_gemini(text):
     """Step 1: Gemini hunts for sources with web search"""
@@ -696,47 +717,70 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM
+# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH HEARTBEAT
 def generate_essay_stream(instructions, word_count):
     """
-    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH RATE LIMIT PROTECTION:
+    GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH HEARTBEAT & PROGRESS:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Writer + Self-Grader)
     - Dean Logic (Gemini - Smart Model Discovery)
     - Chancellor GPT (GPT-4o with token truncation & exponential backoff)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - GROWTH MODE: Forces expansion when under target (prevents shrinking bug)
+    - HEARTBEAT: Sends ping every 10 seconds to prevent proxy timeouts
+    - PROGRESS: Shows percentage completion (Round X/15 - Y%)
     - Target: 2,200 words total to ensure 2,000+ body words
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - GROWTH MODE + SELF-REFLECTION (3 Premium Agents)'})}\n\n"
+    # Setup heartbeat mechanism
+    stop_heartbeat = threading.Event()
+    heartbeat_queue = []
     
-    # Target 2200 words total to ensure 2000+ body words after references
-    target_total_words = 2200
+    def send_heartbeat():
+        """Callback to send heartbeat ping"""
+        heartbeat_queue.append(f"data: {json.dumps({'type': 'heartbeat', 'timestamp': time.time()})}\n\n")
     
-    # Research Phase
-    yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
+    # Start heartbeat thread
+    heartbeat_thread = HeartbeatThread(stop_heartbeat, send_heartbeat)
+    heartbeat_thread.start()
     
-    research_context = ""
     try:
-        search_query = instructions[:150]
-        search_results = google_search(search_query, num_results=5)
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - GROWTH MODE + SELF-REFLECTION (3 Premium Agents)'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '💓 Heartbeat enabled: Connection will stay alive during long operations'})}\n\n"
         
-        if search_results:
-            research_context = "\n\nRESEARCH CONTEXT (from web search):\n"
-            for idx, result in enumerate(search_results, 1):
-                research_context += f"{idx}. {result['title']}\n   Source: {result['link']}\n   Summary: {result['snippet']}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Found {len(search_results)} relevant sources'})}\n\n"
-        else:
-            yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ No search results, proceeding with general knowledge'})}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Research phase error: {str(e)}'})}\n\n"
-    
-    # Initial draft by Prof. Quill (Claude 3.5 Sonnet 20241022)
-    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet 20241022) drafting initial essay...'})}\n\n"
-    
-    # Truncate instructions to prevent token overflow
-    truncated_instructions = truncate_text(instructions, max_tokens=2000)
-    
-    writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
+        # Target 2200 words total to ensure 2000+ body words after references
+        target_total_words = 2200
+        MAX_ROUNDS = 15
+        
+        # Research Phase
+        yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Research'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
+        
+        research_context = ""
+        try:
+            search_query = instructions[:150]
+            search_results = google_search(search_query, num_results=5)
+            
+            if search_results:
+                research_context = "\n\nRESEARCH CONTEXT (from web search):\n"
+                for idx, result in enumerate(search_results, 1):
+                    research_context += f"{idx}. {result['title']}\n   Source: {result['link']}\n   Summary: {result['snippet']}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Found {len(search_results)} relevant sources'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ No search results, proceeding with general knowledge'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Research phase error: {str(e)}'})}\n\n"
+        
+        # Send any queued heartbeats
+        while heartbeat_queue:
+            yield heartbeat_queue.pop(0)
+        
+        # Initial draft by Prof. Quill (Claude 3.5 Sonnet 20241022)
+        yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Initial Draft'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet 20241022) drafting initial essay...'})}\n\n"
+        
+        # Truncate instructions to prevent token overflow
+        truncated_instructions = truncate_text(instructions, max_tokens=2000)
+        
+        writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
 
 CRITICAL WORD COUNT TARGET:
 - TARGET: {target_total_words} words TOTAL (to ensure {word_count}+ body words after references)
@@ -768,36 +812,49 @@ INSTRUCTIONS:
 
 Write {target_total_words} words total. Apply smart citation logic. No banned words. No fluff."""
 
-    try:
-        current_draft = call_claude(writer_prompt, max_tokens=8000)
-        current_word_count = count_words(current_draft)
-        yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Initial draft complete ({current_word_count} body words)'})}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
-        return
-
-    # GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP
-    best_draft = current_draft
-    best_avg_score = 0
-    round_count = 0
-    MAX_ROUNDS = 15  # Hard limit safety break
-    
-    # Store specific rewrites from critics
-    logic_rewrites = ""
-    gpt_rewrites = ""
-    
-    while round_count < MAX_ROUNDS:
-        round_count += 1
-        current_word_count = count_words(current_draft)
-        yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
+        try:
+            current_draft = call_claude(writer_prompt, max_tokens=8000)
+            current_word_count = count_words(current_draft)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Initial draft complete ({current_word_count} body words)'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
+            stop_heartbeat.set()
+            return
         
-        # Truncate draft for grading to prevent token overflow
-        truncated_draft = truncate_text(current_draft, max_tokens=8000)
+        # Send any queued heartbeats
+        while heartbeat_queue:
+            yield heartbeat_queue.pop(0)
         
-        # CRITIC 1: Dean Logic (Gemini with Smart Discovery)
-        yield f"data: {json.dumps({'type': 'log', 'message': f'⚖️ Dean Logic (Gemini {GEMINI_MODEL}) evaluating...'})}\n\n"
+        # GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP
+        best_draft = current_draft
+        best_avg_score = 0
+        round_count = 0
         
-        logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade strictly.
+        # Store specific rewrites from critics
+        logic_rewrites = ""
+        gpt_rewrites = ""
+        
+        while round_count < MAX_ROUNDS:
+            round_count += 1
+            current_word_count = count_words(current_draft)
+            
+            # Calculate progress percentage
+            progress_percentage = round((round_count / MAX_ROUNDS) * 100)
+            
+            yield f"data: {json.dumps({'type': 'progress', 'current': round_count, 'total': MAX_ROUNDS, 'percentage': progress_percentage, 'stage': f'Round {round_count}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} - {progress_percentage}% ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
+            
+            # Truncate draft for grading to prevent token overflow
+            truncated_draft = truncate_text(current_draft, max_tokens=8000)
+            
+            # CRITIC 1: Dean Logic (Gemini with Smart Discovery)
+            yield f"data: {json.dumps({'type': 'log', 'message': f'⚖️ Dean Logic (Gemini {GEMINI_MODEL}) evaluating...'})}\n\n"
+            
+            logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade strictly.
 
 INSTRUCTIONS: {truncated_instructions}
 
@@ -821,28 +878,32 @@ DEAN LOGIC REWRITES:
 
 Provide score and rewrites if needed."""
 
-        try:
-            logic_response = call_gemini(logic_prompt)
-            score_logic = extract_score(logic_response)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dean Logic: {score_logic}/100'})}\n\n"
-            
-            # Extract rewrites if score < 80
-            if score_logic < 80 and "DEAN LOGIC REWRITES:" in logic_response:
-                logic_rewrites = logic_response.split("DEAN LOGIC REWRITES:")[1].strip()
-                yield f"data: {json.dumps({'type': 'log', 'message': '📝 Dean Logic provided specific rewrites'})}\n\n"
-            else:
-                logic_rewrites = ""
+            try:
+                logic_response = call_gemini(logic_prompt)
+                score_logic = extract_score(logic_response)
+                yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Dean Logic: {score_logic}/100'})}\n\n"
                 
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Dean Logic error: {str(e)}'})}\n\n"
-            score_logic = 0
-            logic_response = "Error during grading"
-            logic_rewrites = ""
-        
-        # CRITIC 2: Chancellor GPT (GPT-4o with rate limit protection)
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT (GPT-4o) evaluating...'})}\n\n"
-        
-        gpt_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade with highest standards.
+                # Extract rewrites if score < 80
+                if score_logic < 80 and "DEAN LOGIC REWRITES:" in logic_response:
+                    logic_rewrites = logic_response.split("DEAN LOGIC REWRITES:")[1].strip()
+                    yield f"data: {json.dumps({'type': 'log', 'message': '📝 Dean Logic provided specific rewrites'})}\n\n"
+                else:
+                    logic_rewrites = ""
+                    
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Dean Logic error: {str(e)}'})}\n\n"
+                score_logic = 0
+                logic_response = "Error during grading"
+                logic_rewrites = ""
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
+            
+            # CRITIC 2: Chancellor GPT (GPT-4o with rate limit protection)
+            yield f"data: {json.dumps({'type': 'log', 'message': '🎓 Chancellor GPT (GPT-4o) evaluating...'})}\n\n"
+            
+            gpt_prompt = f"""You are Chancellor GPT, the supreme academic auditor. Grade with highest standards.
 
 INSTRUCTIONS: {truncated_instructions}
 
@@ -866,33 +927,37 @@ CHANCELLOR GPT REWRITES:
 
 Provide score and rewrites if needed."""
 
-        try:
-            gpt_response = call_gpt4(gpt_prompt, max_input_tokens=12000)
-            score_gpt = extract_score(gpt_response)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {score_gpt}/100'})}\n\n"
-            
-            # Extract rewrites if score < 80
-            if score_gpt < 80 and "CHANCELLOR GPT REWRITES:" in gpt_response:
-                gpt_rewrites = gpt_response.split("CHANCELLOR GPT REWRITES:")[1].strip()
-                yield f"data: {json.dumps({'type': 'log', 'message': '📝 Chancellor GPT provided specific rewrites'})}\n\n"
-            else:
-                gpt_rewrites = ""
+            try:
+                gpt_response = call_gpt4(gpt_prompt, max_input_tokens=12000)
+                score_gpt = extract_score(gpt_response)
+                yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Chancellor GPT: {score_gpt}/100'})}\n\n"
                 
-        except openai.RateLimitError as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Chancellor GPT rate limit - retrying with backoff...'})}\n\n"
-            score_gpt = 0
-            gpt_response = "Rate limit error"
-            gpt_rewrites = ""
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Chancellor GPT error: {str(e)}'})}\n\n"
-            score_gpt = 0
-            gpt_response = "Error during grading"
-            gpt_rewrites = ""
-        
-        # --- CRITIC 3: Prof. Quill Self-Reflection (Claude) ---
-        yield f"data: {json.dumps({'type': 'log', 'message': '🤔 Prof. Quill (Claude) self-evaluating...'})}\n\n"
-        
-        quill_grade_prompt = f"""You are Prof. Quill. Grade your own draft OBJECTIVELY.
+                # Extract rewrites if score < 80
+                if score_gpt < 80 and "CHANCELLOR GPT REWRITES:" in gpt_response:
+                    gpt_rewrites = gpt_response.split("CHANCELLOR GPT REWRITES:")[1].strip()
+                    yield f"data: {json.dumps({'type': 'log', 'message': '📝 Chancellor GPT provided specific rewrites'})}\n\n"
+                else:
+                    gpt_rewrites = ""
+                    
+            except openai.RateLimitError as e:
+                yield f"data: {json.dumps({'type': 'log', 'message': '⚠️ Chancellor GPT rate limit - retrying with backoff...'})}\n\n"
+                score_gpt = 0
+                gpt_response = "Rate limit error"
+                gpt_rewrites = ""
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Chancellor GPT error: {str(e)}'})}\n\n"
+                score_gpt = 0
+                gpt_response = "Error during grading"
+                gpt_rewrites = ""
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
+            
+            # --- CRITIC 3: Prof. Quill Self-Reflection (Claude) ---
+            yield f"data: {json.dumps({'type': 'log', 'message': '🤔 Prof. Quill (Claude) self-evaluating...'})}\n\n"
+            
+            quill_grade_prompt = f"""You are Prof. Quill. Grade your own draft OBJECTIVELY.
 
 INSTRUCTIONS: {truncated_instructions}
 
@@ -912,45 +977,55 @@ Provide:
 
 Be harsh on yourself."""
 
-        try:
-            quill_grade_response = call_claude(quill_grade_prompt, max_tokens=2000)
-            score_quill = extract_score(quill_grade_response)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Prof. Quill Self-Score: {score_quill}/100'})}\n\n"
-        except Exception as e:
-            score_quill = 0
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Quill self-grade error: {str(e)}'})}\n\n"
-        
-        # Calculate Average of 3 Agents
-        avg_score = round((score_logic + score_gpt + score_quill) / 3)
-        
-        yield f"data: {json.dumps({'type': 'score', 'round': round_count, 'score': avg_score})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_count} Average: {avg_score}/100 (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
-        
-        # Track best draft
-        if avg_score > best_avg_score:
-            best_avg_score = avg_score
-            best_draft = current_draft
-        
-        # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+
-        if score_logic >= 80 and score_gpt >= 80 and score_quill >= 80:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All 3 agents agree (80+) after {round_count} rounds!'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
-            break
-        else:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
-        
-        # Stop if max rounds reached
-        if round_count >= MAX_ROUNDS:
-            yield f"data: {json.dumps({'type': 'log', 'message': f'⏱️ Max {MAX_ROUNDS} rounds reached. Using best draft (avg: {best_avg_score}/100)'})}\n\n"
-            current_draft = best_draft
-            break
-        
-        # --- SMART MODE SWITCHING: GROWTH VS REFINEMENT ---
-        if current_word_count < word_count:
-            # PHASE 1: AGGRESSIVE GROWTH (Under Target)
-            # Force the AI to EXPAND only. Forbidden to delete text.
-            deficit = word_count - current_word_count
-            mode_instruction = f"""
+            try:
+                quill_grade_response = call_claude(quill_grade_prompt, max_tokens=2000)
+                score_quill = extract_score(quill_grade_response)
+                yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Prof. Quill Self-Score: {score_quill}/100'})}\n\n"
+            except Exception as e:
+                score_quill = 0
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Quill self-grade error: {str(e)}'})}\n\n"
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
+            
+            # Calculate Average of 3 Agents
+            avg_score = round((score_logic + score_gpt + score_quill) / 3)
+            
+            yield f"data: {json.dumps({'type': 'score', 'round': round_count, 'score': avg_score})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': f'📊 Round {round_count} Average: {avg_score}/100 (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
+            
+            # Track best draft
+            if avg_score > best_avg_score:
+                best_avg_score = avg_score
+                best_draft = current_draft
+            
+            # CHECK CONSENSUS - ALL 3 AGENTS MUST SCORE 80+
+            if score_logic >= 80 and score_gpt >= 80 and score_quill >= 80:
+                yield f"data: {json.dumps({'type': 'progress', 'current': round_count, 'total': MAX_ROUNDS, 'percentage': 100, 'stage': 'Complete'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'✅ CONSENSUS REACHED. All 3 agents agree (80+) after {round_count} rounds!'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 Final: {avg_score}/100 avg, {current_word_count} body words'})}\n\n"
+                break
+            else:
+                yield f"data: {json.dumps({'type': 'log', 'message': f'❌ NO CONSENSUS. Revising... (Logic: {score_logic}, GPT: {score_gpt}, Quill: {score_quill})'})}\n\n"
+            
+            # Stop if max rounds reached
+            if round_count >= MAX_ROUNDS:
+                yield f"data: {json.dumps({'type': 'progress', 'current': MAX_ROUNDS, 'total': MAX_ROUNDS, 'percentage': 100, 'stage': 'Max Rounds'})}\n\n"
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⏱️ Max {MAX_ROUNDS} rounds reached. Using best draft (avg: {best_avg_score}/100)'})}\n\n"
+                current_draft = best_draft
+                break
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
+            
+            # --- SMART MODE SWITCHING: GROWTH VS REFINEMENT ---
+            if current_word_count < word_count:
+                # PHASE 1: AGGRESSIVE GROWTH (Under Target)
+                # Force the AI to EXPAND only. Forbidden to delete text.
+                deficit = word_count - current_word_count
+                mode_instruction = f"""
 *** GROWTH MODE ACTIVATED (URGENT) ***
 Current: {current_word_count} words. Target: {word_count} words.
 MISSING: {deficit} words.
@@ -961,20 +1036,20 @@ STRICT RULES:
 3. Method: Take every existing paragraph and EXPAND it with examples, evidence, and analysis.
 4. If critics found errors, fix them by ADDING explanation, not removing text.
 """
-        else:
-            # PHASE 2: REFINEMENT (Target Met)
-            # Now allowed to edit/polish.
-            mode_instruction = f"""
+            else:
+                # PHASE 2: REFINEMENT (Target Met)
+                # Now allowed to edit/polish.
+                mode_instruction = f"""
 *** REFINEMENT MODE ACTIVATED ***
 Target met ({current_word_count}/{word_count}).
 Now you may polish the text, fix flow, and remove redundancy while keeping the count above {word_count}.
 """
 
-        # REVISION PHASE - Prof. Quill MERGES critic contributions
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) merging critic contributions...'})}\n\n"
-        
-        # Apply the mode to the prompt
-        merge_prompt = f"""You are Prof. Quill.
+            # REVISION PHASE - Prof. Quill MERGES critic contributions
+            yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) merging critic contributions...'})}\n\n"
+            
+            # Apply the mode to the prompt
+            merge_prompt = f"""You are Prof. Quill.
 {mode_instruction}
 
 ORIGINAL INSTRUCTIONS: {truncated_instructions}
@@ -989,35 +1064,44 @@ EXECUTION:
 Revise the essay following the STRICT RULES of the current Mode above.
 """
 
-        try:
-            current_draft = call_claude(merge_prompt, max_tokens=8000)
-            new_word_count = count_words(current_draft)
-            yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Merge complete ({new_word_count} body words)'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Merge error: {str(e)}'})}\n\n"
-            break
+            try:
+                current_draft = call_claude(merge_prompt, max_tokens=8000)
+                new_word_count = count_words(current_draft)
+                yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Merge complete ({new_word_count} body words)'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Merge error: {str(e)}'})}\n\n"
+                break
+            
+            # Send any queued heartbeats
+            while heartbeat_queue:
+                yield heartbeat_queue.pop(0)
 
-    final_word_count = count_words(best_draft)
-    final_avg = best_avg_score
-    yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 COMPLETE! Final: {final_avg}/100 avg, {final_word_count} body words, {round_count} rounds'})}\n\n"
-    
-    # Save to database
-    try:
-        essay = Essay(
-            user_id=current_user.id,
-            title=instructions[:100],
-            instructions=instructions,
-            final_content=best_draft,
-            final_score=final_avg,
-            rounds_used=round_count,
-            word_count_limit=word_count
-        )
-        db.session.add(essay)
-        db.session.commit()
+        final_word_count = count_words(best_draft)
+        final_avg = best_avg_score
+        yield f"data: {json.dumps({'type': 'log', 'message': f'🏁 COMPLETE! Final: {final_avg}/100 avg, {final_word_count} body words, {round_count} rounds'})}\n\n"
         
-        yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': final_avg})}\n\n"
-    except Exception as e:
-        yield f"data: {json.dumps({'type': 'error', 'message': f'DB error: {str(e)}'})}\n\n"
+        # Save to database
+        try:
+            essay = Essay(
+                user_id=current_user.id,
+                title=instructions[:100],
+                instructions=instructions,
+                final_content=best_draft,
+                final_score=final_avg,
+                rounds_used=round_count,
+                word_count_limit=word_count
+            )
+            db.session.add(essay)
+            db.session.commit()
+            
+            yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': final_avg})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'DB error: {str(e)}'})}\n\n"
+    
+    finally:
+        # Stop heartbeat thread
+        stop_heartbeat.set()
+        heartbeat_thread.join(timeout=1)
 
 # TOOL C: The Oracle (AI Detection)
 def check_ai_content(text):
@@ -1689,5 +1773,5 @@ with app.app_context():
         print("✅ Demo user created")
 
 if __name__ == '__main__':
-    # CRITICAL: Gunicorn timeout MUST be set to 300s+ in Render Start Command: gunicorn --timeout 300 app:app
+    # CRITICAL: Gunicorn timeout MUST be set to 600s+ in Render Start Command: gunicorn --timeout 600 --keep-alive 5 --workers 1 app:app
     app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
