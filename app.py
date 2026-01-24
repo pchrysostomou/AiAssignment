@@ -335,7 +335,7 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions with Retry Logic
+# AI Helper Functions with Retry Logic and SAFETY FALLBACK CASCADE
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -347,32 +347,67 @@ def call_with_retry(func, max_retries=3):
 
 def call_claude(prompt, max_tokens=8000):
     """
-    Call Claude 3.5 Sonnet (EXACT MODEL: claude-3-5-sonnet-20241022)
-    Tier 1 confirmed available. Do NOT use "latest" or "opus".
+    SAFETY FALLBACK CASCADE for Claude:
+    1. Try: claude-3-5-sonnet-latest (Let Anthropic pick best version)
+    2. If 404: Fallback to claude-3-5-sonnet-20240620 (Previous stable)
+    3. EMERGENCY: If all Sonnets fail, use claude-3-haiku-20240307
+    
+    CRITICAL: Better to generate with Haiku than crash with error.
     """
     if not anthropic_client:
         raise Exception("Anthropic API key not configured")
     
-    for attempt in range(3):
-        try:
-            print(f"🤖 Calling Claude 3.5 Sonnet (claude-3-5-sonnet-20241022) - Attempt {attempt + 1}/3")
-            response = anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
-                max_tokens=max_tokens,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            print(f"✅ Claude 3.5 Sonnet API call successful")
-            return response.content[0].text
-        except Exception as e:
-            print(f"❌ Claude Sonnet Error (attempt {attempt + 1}/3): {str(e)}")
-            if attempt < 2:
-                time.sleep(5)
-            else:
-                raise Exception(f"Claude Sonnet failed after 3 attempts: {str(e)}")
+    # CASCADE 1: Try claude-3-5-sonnet-latest (Anthropic auto-picks best)
+    try:
+        print(f"🤖 Attempting Claude 3.5 Sonnet (latest)...")
+        response = anthropic_client.messages.create(
+            model="claude-3-5-sonnet-latest",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        print(f"✅ Claude 3.5 Sonnet (latest) API call successful")
+        return response.content[0].text
+    except anthropic.NotFoundError as e:
+        print(f"⚠️ Claude Sonnet (latest) 404 Error: {str(e)}")
+        print(f"🔄 Falling back to claude-3-5-sonnet-20240620...")
+    except Exception as e:
+        print(f"⚠️ Claude Sonnet (latest) Error: {str(e)}")
+        print(f"🔄 Falling back to claude-3-5-sonnet-20240620...")
+    
+    # CASCADE 2: Fallback to claude-3-5-sonnet-20240620 (Previous stable)
+    try:
+        print(f"🤖 Attempting Claude 3.5 Sonnet (20240620)...")
+        response = anthropic_client.messages.create(
+            model="claude-3-5-sonnet-20240620",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        print(f"✅ Claude 3.5 Sonnet (20240620) API call successful")
+        return response.content[0].text
+    except anthropic.NotFoundError as e:
+        print(f"⚠️ Claude Sonnet (20240620) 404 Error: {str(e)}")
+        print(f"🔄 EMERGENCY FALLBACK to claude-3-haiku-20240307...")
+    except Exception as e:
+        print(f"⚠️ Claude Sonnet (20240620) Error: {str(e)}")
+        print(f"🔄 EMERGENCY FALLBACK to claude-3-haiku-20240307...")
+    
+    # CASCADE 3: EMERGENCY FALLBACK - claude-3-haiku-20240307
+    try:
+        print(f"🤖 EMERGENCY: Attempting Claude 3 Haiku (20240307)...")
+        response = anthropic_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=min(max_tokens, 4096),  # Haiku max is 4096
+            messages=[{"role": "user", "content": prompt}]
+        )
+        print(f"✅ Claude 3 Haiku (EMERGENCY FALLBACK) API call successful")
+        return response.content[0].text
+    except Exception as e:
+        print(f"❌ ALL CLAUDE MODELS FAILED: {str(e)}")
+        raise Exception(f"All Claude models failed (Sonnet latest, Sonnet 20240620, Haiku): {str(e)}")
 
 def call_gpt4(prompt, model="gpt-4o"):
     """
-    Call OpenAI GPT-4o (EXACT MODEL: gpt-4o)
+    Call OpenAI GPT-4o with retry logic and error handling.
     Used for Chancellor GPT (Critic 2)
     """
     if not openai_api_key:
@@ -391,20 +426,36 @@ def call_gpt4(prompt, model="gpt-4o"):
 
 def call_gemini(prompt):
     """
-    Call Google Gemini 1.5 Pro (EXACT MODEL: gemini-1.5-pro, NOT flash)
-    Used for Dean Logic (Critic 1)
-    Generative Language API is ENABLED.
+    SAFETY FALLBACK CASCADE for Gemini:
+    1. Try: gemini-1.5-pro-latest (Updated model name)
+    2. If 404: Fallback to gemini-1.5-flash (Keep voting loop alive)
+    
+    CRITICAL: Better to use Flash than crash the consensus loop.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
-    def api_call():
-        print(f"🤖 Calling Google Gemini 1.5 Pro...")
-        model = genai.GenerativeModel('gemini-1.5-pro')
+    # CASCADE 1: Try gemini-1.5-pro-latest
+    try:
+        print(f"🤖 Attempting Google Gemini 1.5 Pro (latest)...")
+        model = genai.GenerativeModel('gemini-1.5-pro-latest')
         response = model.generate_content(prompt)
-        print(f"✅ Google Gemini 1.5 Pro API call successful")
+        print(f"✅ Google Gemini 1.5 Pro (latest) API call successful")
         return response.text
-    return call_with_retry(api_call)
+    except Exception as e:
+        print(f"⚠️ Gemini Pro (latest) Error: {str(e)}")
+        print(f"🔄 Falling back to gemini-1.5-flash...")
+    
+    # CASCADE 2: FALLBACK to gemini-1.5-flash
+    try:
+        print(f"🤖 FALLBACK: Attempting Google Gemini 1.5 Flash...")
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(prompt)
+        print(f"✅ Google Gemini 1.5 Flash (FALLBACK) API call successful")
+        return response.text
+    except Exception as e:
+        print(f"❌ ALL GEMINI MODELS FAILED: {str(e)}")
+        raise Exception(f"All Gemini models failed (Pro latest, Flash): {str(e)}")
 
 def extract_score(text):
     """Extract score from agent response"""
@@ -590,17 +641,17 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - STRICT CONSENSUS 3-AGENT SYSTEM WITH SAFETY FALLBACKS
 def generate_essay_stream(instructions, word_count):
     """
-    STRICT CONSENSUS LOOP:
-    - Prof. Quill (Claude 3.5 Sonnet) writes
-    - Dean Logic (Gemini 1.5 Pro) critiques with specific rewrites
-    - Chancellor GPT (GPT-4o) critiques with specific rewrites
+    STRICT CONSENSUS LOOP WITH SAFETY FALLBACKS:
+    - Prof. Quill (Claude with cascade: latest → 20240620 → Haiku)
+    - Dean Logic (Gemini with cascade: pro-latest → flash)
+    - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - Target: 2,200 words total to ensure 2,000+ body words
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - STRICT CONSENSUS MODE (3 Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - STRICT CONSENSUS MODE (3 Agents with Safety Fallbacks)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -623,8 +674,8 @@ def generate_essay_stream(instructions, word_count):
     except Exception as e:
         yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Research phase error: {str(e)}'})}\n\n"
     
-    # Initial draft by Prof. Quill
-    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) drafting initial essay...'})}\n\n"
+    # Initial draft by Prof. Quill (with Safety Fallback Cascade)
+    yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude with Safety Fallbacks) drafting initial essay...'})}\n\n"
     
     writer_prompt = f"""You are Prof. Quill, operating under the SPARTAN ACADEMIC protocol.
 
@@ -666,7 +717,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # STRICT CONSENSUS LOOP
+    # STRICT CONSENSUS LOOP WITH GRACEFUL TIMEOUT HANDLING
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -681,8 +732,8 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # CRITIC 1: Dean Logic (Gemini 1.5 Pro) - Active Contribution
-        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro) evaluating...'})}\n\n"
+        # CRITIC 1: Dean Logic (Gemini with Safety Fallback) - Active Contribution
+        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini with Safety Fallbacks) evaluating...'})}\n\n"
         
         logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
 
@@ -813,8 +864,8 @@ Provide score and specific rewrites if needed."""
             current_draft = best_draft
             break
         
-        # REVISION PHASE - Prof. Quill MERGES critic contributions
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill merging critic contributions...'})}\n\n"
+        # REVISION PHASE - Prof. Quill MERGES critic contributions (with Safety Fallback)
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill merging critic contributions (with Safety Fallbacks)...'})}\n\n"
         
         word_count_guidance = ""
         if current_word_count < word_count:
@@ -1128,7 +1179,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (STRICT CONSENSUS 3-Agent System!)
+- The Architect: AI Essay Writer (STRICT CONSENSUS 3-Agent System with Safety Fallbacks!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1222,7 +1273,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with STRICT CONSENSUS 3-agent system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with STRICT CONSENSUS 3-agent system with Safety Fallbacks (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
