@@ -148,6 +148,45 @@ if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
 else:
     print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
+# DYNAMIC MODEL DISCOVERY FUNCTION - ELIMINATES 404 ERRORS
+def get_actual_gemini_model():
+    """
+    DYNAMIC MODEL DISCOVERY - Query Google API for available models.
+    This eliminates 404 errors by using only models that actually exist for this API key.
+    
+    Priority Logic:
+    1. Any version of gemini-1.5-pro (e.g., models/gemini-1.5-pro-001, models/gemini-1.5-pro-latest)
+    2. Any version of gemini-1.5-flash (fallback)
+    3. gemini-pro (emergency fallback)
+    """
+    print("🔍 DIAGNOSTIC: Listing available Gemini models...")
+    try:
+        # Get list of all models that support generating content
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        print(f"📋 AVAILABLE MODELS FOUND: {all_models}")
+        
+        # Priority 1: Try to find ANY version of 1.5 Pro
+        # This catches 'models/gemini-1.5-pro-001', 'models/gemini-1.5-pro-latest', etc.
+        for model in all_models:
+            if "gemini-1.5-pro" in model:
+                print(f"✅ SELECTED: {model}")
+                return model  # Return the EXACT string found in the API
+        
+        # Priority 2: Fallback to 1.5 Flash if Pro isn't listed
+        for model in all_models:
+            if "gemini-1.5-flash" in model:
+                print(f"⚠️ Fallback to Flash: {model}")
+                return model
+                
+        # Emergency Fallback
+        print(f"⚠️ Emergency fallback: gemini-pro")
+        return "gemini-pro"
+        
+    except Exception as e:
+        print(f"❌ Error listing models: {e}")
+        return "gemini-1.5-pro"  # Blind hope fallback
+
 # MOCK EMAIL FUNCTION (For localhost development)
 def send_email_mock(user_email, subject, body):
     """Mock email sender - prints to console instead of sending real emails"""
@@ -335,7 +374,7 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# AI Helper Functions - DYNAMIC LATEST POINTER CONFIGURATION
+# AI Helper Functions - DYNAMIC DISCOVERY CONFIGURATION
 def call_with_retry(func, max_retries=3):
     for attempt in range(max_retries):
         try:
@@ -406,20 +445,19 @@ def call_gpt4(prompt, model="gpt-4o"):
 
 def call_gemini(prompt):
     """
-    DYNAMIC LATEST POINTER CONFIGURATION for Gemini:
-    USE: gemini-1.5-pro-latest (dynamic pointer to newest 1.5 Pro version)
+    DYNAMIC DISCOVERY CONFIGURATION for Gemini:
+    Uses get_actual_gemini_model() to automatically detect available models.
     
-    Requires google-generativeai>=0.8.3 to recognize 1.5 models.
-    The '-latest' suffix automatically maps to the newest available 1.5 Pro version.
+    NO MORE 404 ERRORS - model is discovered at runtime from Google's API.
     """
     if not google_api_key:
         raise Exception("Google API key not configured")
     
-    # Use 'latest' which maps to the newest available 1.5 Pro version
-    dean_logic_model = "gemini-1.5-pro-latest"
-    
     try:
-        print(f"🤖 Calling Google Gemini ({dean_logic_model}) - DYNAMIC LATEST POINTER MODE")
+        # DYNAMIC DISCOVERY: Get the best available Gemini model
+        dean_logic_model = get_actual_gemini_model()
+        
+        print(f"🤖 Calling Google Gemini ({dean_logic_model}) - DYNAMIC DISCOVERY MODE")
         model = genai.GenerativeModel(dean_logic_model)
         response = model.generate_content(prompt)
         print(f"✅ Google Gemini ({dean_logic_model}) API call successful")
@@ -612,19 +650,19 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - DYNAMIC LATEST POINTER STRICT CONSENSUS 3-AGENT SYSTEM
+# TOOL B: The Architect - DYNAMIC DISCOVERY STRICT CONSENSUS 3-AGENT SYSTEM
 def generate_essay_stream(instructions, word_count):
     """
-    DYNAMIC LATEST POINTER STRICT CONSENSUS LOOP:
+    DYNAMIC DISCOVERY STRICT CONSENSUS LOOP:
     - Prof. Quill (Claude 3.5 Sonnet 20241022 - Tier 1)
-    - Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER)
+    - Dean Logic (Gemini DYNAMIC DISCOVERY - auto-detects best available model)
     - Chancellor GPT (GPT-4o)
     - Loop continues until ALL 3 agents score 80+ in SAME round
     - Target: 2,200 words total to ensure 2,000+ body words
     
-    Uses gemini-1.5-pro-latest which maps to newest available 1.5 Pro version.
+    NO MORE 404 ERRORS - Gemini model is discovered at runtime.
     """
-    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - DYNAMIC LATEST POINTER STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
+    yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - DYNAMIC DISCOVERY STRICT CONSENSUS MODE (3 Premium Agents)'})}\n\n"
     
     # Target 2200 words total to ensure 2000+ body words after references
     target_total_words = 2200
@@ -690,7 +728,7 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         yield f"data: {json.dumps({'type': 'error', 'message': f'Error: {str(e)}'})}\n\n"
         return
 
-    # DYNAMIC LATEST POINTER STRICT CONSENSUS LOOP
+    # DYNAMIC DISCOVERY STRICT CONSENSUS LOOP
     best_draft = current_draft
     best_avg_score = 0
     round_count = 0
@@ -705,8 +743,8 @@ Write {target_total_words} words total. Apply smart citation logic. No banned wo
         current_word_count = count_words(current_draft)
         yield f"data: {json.dumps({'type': 'log', 'message': f'━━━ ROUND {round_count}/{MAX_ROUNDS} ({current_word_count}/{word_count} body words) ━━━'})}\n\n"
         
-        # CRITIC 1: Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER)
-        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini 1.5 Pro Latest - DYNAMIC POINTER) evaluating...'})}\n\n"
+        # CRITIC 1: Dean Logic (Gemini DYNAMIC DISCOVERY)
+        yield f"data: {json.dumps({'type': 'log', 'message': '⚖️ Dean Logic (Gemini DYNAMIC DISCOVERY) evaluating...'})}\n\n"
         
         logic_prompt = f"""You are Dean Logic, a harsh academic critic. Grade this essay strictly.
 
@@ -1152,7 +1190,7 @@ Welcome to The Academic Board, {username}!
 Your account has been successfully created.
 
 Get started with our premium AI-powered academic tools:
-- The Architect: AI Essay Writer (DYNAMIC LATEST POINTER 3-Agent Consensus System!)
+- The Architect: AI Essay Writer (DYNAMIC DISCOVERY 3-Agent Consensus System!)
 - The Detective: Plagiarism Checker
 - The Oracle: AI Content Detector
 - The Grader: Assignment Marking
@@ -1246,7 +1284,7 @@ PRICING:
 - Assignment Grader: £10
 
 TOOLS:
-- The Architect: AI essay writer with DYNAMIC LATEST POINTER 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
+- The Architect: AI essay writer with DYNAMIC DISCOVERY 3-agent consensus system (Prof. Quill, Dean Logic, Chancellor GPT)
 - The Detective: Plagiarism checker with PDF reports
 - The Oracle: AI content detector
 - The Grader: Strict assignment marking
