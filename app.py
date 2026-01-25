@@ -439,28 +439,28 @@ def call_with_retry(func, max_retries=3):
                 raise
             time.sleep(2 * (attempt + 1))
 
-# FIX #1: CLAUDE API - USE STABLE VERSION ID TO AVOID 404 ERRORS
-def call_claude(prompt, max_tokens=8000):
+# FIX #1: SWITCH TO HAIKU (Stable Model)
+def call_claude(prompt, max_tokens=4000):
     """
-    FIXED: Use 'claude-3-5-sonnet-20240620' stable version ID to avoid 404 errors.
+    RESCUE FIX: Switched to 'claude-3-haiku-20240307' for maximum stability.
     Falls back to GPT-4 if Claude fails entirely.
     """
     if not anthropic_client:
         return call_gpt4(prompt)  # Fallback if no API key
     
     try:
-        print(f"🤖 Calling Claude 3.5 Sonnet (stable version 20240620)")
+        print(f"🤖 Calling Claude 3 Haiku (stable version 20240307)")
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-20240620",  # CHANGED: Use specific stable version ID
+            model="claude-3-haiku-20240307",  # CHANGED: Use most stable Haiku model
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
-        print(f"✅ Claude 3.5 Sonnet API call successful")
+        print(f"✅ Claude 3 Haiku API call successful")
         return response.content[0].text
     except Exception as e:
         print(f"❌ Claude Error: {str(e)}")
         print(f"🔄 Falling back to GPT-4...")
-        return call_gpt4(prompt)  # Fallback to GPT if Claude fails
+        return call_gpt4(prompt)  # Hard fallback to GPT
 
 def call_gpt4(prompt, model="gpt-4o", max_input_tokens=15000):
     """
@@ -736,9 +736,9 @@ def generate_essay_stream(instructions, word_count):
         while heartbeat_queue:
             yield heartbeat_queue.pop(0)
         
-        # Initial draft by Prof. Quill (Claude 3.5 Sonnet 20240620)
+        # Initial draft by Prof. Quill (Claude 3 Haiku 20240307)
         yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Initial Draft'})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet 20240620) drafting initial essay...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3 Haiku 20240307) drafting initial essay...'})}\n\n"
         
         # Truncate instructions to prevent token overflow
         truncated_instructions = truncate_text(instructions, max_tokens=2000)
@@ -776,7 +776,7 @@ INSTRUCTIONS:
 Write {target_total_words} words total. Apply smart citation logic. No banned words. No fluff."""
 
         try:
-            current_draft = call_claude(writer_prompt, max_tokens=8000)
+            current_draft = call_claude(writer_prompt, max_tokens=4000)
             current_word_count = count_words(current_draft)
             yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Initial draft complete ({current_word_count} body words)'})}\n\n"
         except Exception as e:
@@ -1045,7 +1045,7 @@ Now polish the text while keeping count above {word_count}.
 """
 
             # REVISION PHASE - Prof. Quill MERGES critic contributions WITH ENHANCED RATCHET + FLOOR MECHANISM
-            yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) merging critic contributions...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3 Haiku) merging critic contributions...'})}\n\n"
             
             # Apply the mode to the prompt
             merge_prompt = f"""You are Prof. Quill.
@@ -1070,7 +1070,7 @@ Revise the essay following the STRICT RULES of the current Mode above.
                 previous_word_count = current_word_count
                 
                 # 2. Generate new candidate draft
-                candidate_draft = call_claude(merge_prompt, max_tokens=8000)
+                candidate_draft = call_claude(merge_prompt, max_tokens=4000)
                 candidate_word_count = count_words(candidate_draft)
                 
                 # 3. ENHANCED RATCHET GUARDRAIL (Two-Condition Check)
@@ -1627,52 +1627,49 @@ def generate_essay():
         }
     )
 
-# MASTER REFACTOR: PLAGIARISM WITH COLOR MAPPING + SCROLLING FIX + CLIENT-SIDE PDF
+# FIX #3: PLAGIARISM (Simplify Logic + PDF Export + ALWAYS SHOW TEXT)
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """HYBRID PLAGIARISM DETECTION - GEMINI SEARCHES, GPT-4 VERIFIES + HTML2PDF"""
+    """RESCUE FIX: Simplified plagiarism detection with guaranteed text visibility"""
     text = request.form.get('text')
-    if not text: 
+    if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 MASTER REFACTOR: Hybrid plagiarism detection with client-side PDF...")
+    print("🔍 RESCUE FIX: Simplified plagiarism detection...")
     
-    # 1. Get Data with Hybrid Approach (Gemini searches, GPT-4 verifies)
+    # Use simpler logic to avoid JSON crashes
     findings = plagiarism_hunter_gemini(text)
     
-    # 2. Color Palette for Sources
-    colors = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']  # Neon Cyan, Yellow, Lime, Purple, Red
+    # Visuals
+    colors = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
     source_colors = {s.get('id'): colors[i % len(colors)] for i, s in enumerate(findings.get('sources', []))}
 
-    # 3. Generate Source List (Left Panel)
+    # Left Panel: Sources
     sources_html = ""
     for s in findings.get('sources', []):
         color = source_colors.get(s.get('id'), '#ccc')
         url = s.get('url', '#')
         if not url.startswith('http'): 
-            url = 'https://' + url  # Fix broken links
+            url = 'https://' + url
         
         sources_html += f'''
-        <div style="border-left: 5px solid {color}; background: #2d2d2d; margin-bottom: 10px; padding: 12px; border-radius: 4px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.1em; word-break: break-all;">
-                    {s.get('domain')} <span style="font-size:0.8em">🔗</span>
-                </a>
-                <span style="background:{color}; color:black; padding:2px 8px; border-radius:10px; font-weight:bold;">{s.get('similarity')}%</span>
+        <div style="border-left: 5px solid {color}; background: #2d2d2d; margin-bottom: 10px; padding: 10px;">
+            <div style="display:flex; justify-content:space-between;">
+                <a href="{url}" target="_blank" style="color:{color}; font-weight:bold; text-decoration:none;">{s.get('domain')} 🔗</a>
+                <span style="color:white;">{s.get('similarity')}%</span>
             </div>
         </div>'''
 
-    # 4. Generate Text with Color Highlights (Right Panel)
+    # Right Panel: Text (CRITICAL FIX: Ensure text is visible even if no matches found)
     highlighted_text = text
-    for match in findings.get('matches', []):
-        seg = match.get('text_segment', '')
-        color = source_colors.get(match.get('source_id'), 'transparent')
-        if len(seg) > 10:  # Only highlight substantial matches
-            # Add background color with 30% opacity for readability
-            highlighted_text = highlighted_text.replace(seg, f'<span style="background-color: {color}4D; border-bottom: 2px solid {color}; color: #fff;">{seg}</span>')
+    if findings.get('matches'):
+        for match in findings.get('matches', []):
+            seg = match.get('text_segment', '')
+            color = source_colors.get(match.get('source_id'), 'transparent')
+            if len(seg) > 10:
+                highlighted_text = highlighted_text.replace(seg, f'<span style="background-color: {color}40; border-bottom: 2px solid {color}; color: #fff;">{seg}</span>')
 
-    # 5. PDF Script (html2pdf.js)
     pdf_script = """
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script>
@@ -1684,7 +1681,25 @@ def check_plagiarism():
     </script>
     """
 
-    # 6. Save Report to DB
+    html = f"""
+    {pdf_script}
+    <div id="plagiarism-dashboard" style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; color: #e0e0e0; background: #121212; padding: 20px;">
+        <div style="flex: 1; overflow-y: auto; padding-right: 15px; border-right: 1px solid #333;">
+            <h3 style="margin-top:0;">Sources</h3>
+            {sources_html if sources_html else "<p>No sources detected.</p>"}
+        </div>
+        <div style="flex: 2; background: #1e1e1e; padding: 30px; border-radius: 8px; overflow-y: auto; line-height: 1.8;">
+            {highlighted_text}
+        </div>
+        <div style="flex: 0 0 150px; text-align: center;">
+            <div style="width:120px; height:120px; border-radius:50%; border:10px solid #f44336; display:flex; align-items:center; justify-content:center; margin:0 auto; font-size: 2.5em; font-weight: bold;">
+                {findings.get('score', 0)}%
+            </div>
+            <button onclick="exportPDF()" data-html2canvas-ignore="true" style="margin-top:20px; background: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 25px; cursor: pointer;">📥 Export PDF</button>
+        </div>
+    </div>"""
+    
+    # Save Report to DB
     try:
         report = Report(
             user_id=current_user.id,
@@ -1697,56 +1712,68 @@ def check_plagiarism():
         print(f"✅ Report saved to database (ID: {report.id})")
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
-
-    # 7. Render Dashboard with FIXED SCROLLING + PDF BUTTON
-    score = findings.get('score', 0)
-    gauge_color = '#ff1744' if score > 20 else '#00e676'
-
-    html = f"""
-    {pdf_script}
-    <div id="plagiarism-dashboard" style="display: flex; gap: 20px; height: 650px; font-family: sans-serif; color: #e0e0e0; background: #121212; padding: 20px;">
-        <div style="flex: 1; overflow-y: auto; padding-right: 15px; border-right: 1px solid #333;">
-            <h3 style="margin-top:0; color:#fff;">Detected Sources</h3>
-            {sources_html if sources_html else "<p>No plagiarism detected.</p>"}
-        </div>
-        
-        <div style="flex: 2; background: #1e1e1e; padding: 30px; border-radius: 8px; border: 1px solid #333; overflow-y: scroll; line-height: 1.8; font-size: 1.1em;">
-            {highlighted_text}
-        </div>
-        
-        <div style="flex: 0 0 180px; text-align: center; display:flex; flex-direction:column; align-items:center;">
-            <div style="width:140px; height:140px; border-radius:50%; border:15px solid {gauge_color}; display:flex; align-items:center; justify-content:center; font-size:3em; font-weight:bold; color:white;">
-                {score}%
-            </div>
-            <h4 style="margin:15px 0; color:#ccc;">Risk Level</h4>
-            <button onclick="exportPDF()" data-html2canvas-ignore="true" style="background: linear-gradient(45deg, #2196F3, #21CBF3); color: white; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);">
-                📥 Export PDF
-            </button>
-        </div>
-    </div>"""
     
-    print("✅ MASTER REFACTOR: Returning hybrid detection with client-side PDF")
+    print("✅ RESCUE FIX: Returning simplified plagiarism detection")
     return jsonify({'success': True, 'html': html})
 
-# MASTER REFACTOR: AI DETECTOR WITH NEON HIGHLIGHTS + SCROLLING FIX + CLIENT-SIDE PDF
+# FIX #2: AI CHECK (Prevent Empty Box + PDF Export + ALWAYS SHOW TEXT)
 @app.route('/check-ai', methods=['POST'])
 @login_required
 def check_ai():
-    """3-AGENT AI DETECTION - NEON HIGHLIGHTS + SCROLLING + HTML2PDF"""
+    """RESCUE FIX: AI detection with guaranteed text visibility"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🤖 MASTER REFACTOR: AI detection with neon highlights and client-side PDF...")
+    print("🤖 RESCUE FIX: AI detection with guaranteed text visibility...")
     
-    # 1. FAIL-SAFE DATA RETRIEVAL
-    try: 
+    # 1. Get Data (Consensus)
+    try:
         data = check_ai_consensus(text)
     except Exception as e:
         print(f"❌ Consensus Error: {e}")
         data = {"ai_score": 0, "segments": []}
 
-    # 2. SAVE REPORT TO DB
+    # 2. Build HTML Content (CRITICAL FIX FOR EMPTY BOX)
+    content_html = ""
+    segments = data.get('segments', [])
+    
+    if not segments:
+        # If AI failed to segment, just show original text
+        content_html = f"<span>{text}</span>"
+    else:
+        for seg in segments:
+            bg = "transparent"
+            if seg.get('is_ai'):
+                bg = "rgba(255, 23, 68, 0.4)" if seg.get('confidence', 0) > 75 else "rgba(255, 214, 0, 0.3)"
+            content_html += f'<span style="background-color:{bg}; padding:2px 0;">{seg["text"]}</span> '
+
+    # 3. PDF Script (Direct Browser Download)
+    pdf_script = """
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script>
+    function exportAIPDF() {
+        const element = document.getElementById('ai-dashboard');
+        const opt = { margin: 0.2, filename: 'AI_Report.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } };
+        html2pdf().set(opt).from(element).save();
+    }
+    </script>
+    """
+
+    html = f"""
+    {pdf_script}
+    <div id="ai-dashboard" style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; background: #121212; padding: 20px; color: #e0e0e0;">
+        <div style="flex: 3; background: #1e1e1e; padding: 30px; border-radius: 12px; border: 1px solid #333; overflow-y: auto; line-height: 1.8;">
+            {content_html}
+        </div>
+        <div style="flex: 1; background: #252526; padding: 30px; border-radius: 12px; text-align: center;">
+            <h3 style="color:#bdc3c7;">AI Probability</h3>
+            <div style="font-size: 5em; color: #ff1744; font-weight: bold; margin: 20px 0;">{data.get('ai_score', 0)}%</div>
+            <button onclick="exportAIPDF()" data-html2canvas-ignore="true" style="margin-top:20px; background: linear-gradient(45deg, #FF512F, #DD2476); color: white; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer;">📥 Export PDF</button>
+        </div>
+    </div>"""
+    
+    # Save Report to DB
     try:
         report = Report(
             user_id=current_user.id,
@@ -1759,44 +1786,8 @@ def check_ai():
         print(f"✅ Report saved to database (ID: {report.id})")
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
-
-    # 3. GENERATE NEON HIGHLIGHTS
-    content_html = ""
-    for seg in data.get('segments', []):
-        bg = "transparent"
-        if seg.get('is_ai'):
-            # NEON COLORS: Red for high, Yellow for medium
-            bg = "rgba(255, 23, 68, 0.4)" if seg.get('confidence', 0) > 75 else "rgba(255, 214, 0, 0.3)"
-        content_html += f'<span style="background-color:{bg}; padding:2px 0;">{seg["text"]}</span> '
-
-    # 4. PDF SCRIPT
-    pdf_script = """
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script>
-    function exportAIPDF() {
-        const element = document.getElementById('ai-dashboard');
-        const opt = { margin: 0.5, filename: 'AI_Report.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' } };
-        html2pdf().set(opt).from(element).save();
-    }
-    </script>
-    """
-
-    # 5. RENDER DASHBOARD WITH FIXED SCROLLING + PDF BUTTON
-    html = f"""
-    {pdf_script}
-    <div id="ai-dashboard" style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; background: #121212; padding:20px;">
-        <div style="flex: 3; background: #1e1e1e; color: #e0e0e0; padding: 30px; border-radius: 12px; border: 1px solid #333; overflow-y: auto; line-height: 1.9; font-size: 1.1em;">
-            {content_html}
-        </div>
-        
-        <div style="flex: 1; background: #252526; color: white; padding: 30px; border-radius: 12px; text-align: center; border: 1px solid #333;">
-            <h3 style="color:#bdc3c7;">AI Probability</h3>
-            <div style="font-size: 6em; color: #ff1744; font-weight: bold; margin: 20px 0;">{data.get('ai_score', 0)}%</div>
-            <button onclick="exportAIPDF()" data-html2canvas-ignore="true" style="margin-top:30px; background: linear-gradient(45deg, #FF512F, #DD2476); color: white; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold;">📥 Export PDF</button>
-        </div>
-    </div>"""
     
-    print("✅ MASTER REFACTOR: Returning neon highlights with client-side PDF")
+    print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html})
 
 # --- VIEW REPORT ROUTE (FOR ACCESSING SAVED REPORTS) ---
