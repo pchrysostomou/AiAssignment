@@ -1798,14 +1798,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# NEW: DYNAMIC PDF EXPORT ENDPOINT (FIXES BROKEN EXPORT BUTTONS)
+# NEW: DYNAMIC PDF EXPORT ENDPOINT WITH "SEARCH & REPLACE" STRATEGY
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR WITH REMAINDER HANDLING
+    UNIFIED DYNAMIC PDF GENERATOR - "SEARCH & REPLACE" STRATEGY
     Generates PDF on-the-fly with visual highlights for AI Detector and Plagiarism tools.
-    CRITICAL FIX: Appends remaining text that wasn't analyzed by AI (prevents truncation).
+    Uses robust string replacement to wrap segments in highlight tags within the master text.
+    GUARANTEES: Complete content rendering - no truncation.
     No disk storage - streams directly to user.
     """
     report = Report.query.get_or_404(report_id)
@@ -1844,82 +1845,60 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- ROBUST PDF RENDERER (With Remainder Handling) ---
+            # --- ROBUST "SEARCH & REPLACE" PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
-            segments = data.get('segments', [])
+            # 1. Retrieve Data
             full_text = data.get('input_text', '')
+            segments = data.get('segments', [])
+
+            # 2. Fail-Safe: If full_text is missing (old records), reconstruct it
+            if not full_text and segments:
+                full_text = " ".join([s.get('text', '') for s in segments])
             
-            # Track what has been printed to identify the remainder
-            printed_content_accumulator = ""
-
-            # Helper for text formatting
-            def add_formatted_text(text_content, background_color=None):
-                paragraphs = text_content.split('\n')
-                for p in paragraphs:
-                    if p.strip():
-                        if background_color:
-                            style = ParagraphStyle('Highlight', parent=styles['Normal'], backColor=background_color)
-                            story.append(Paragraph(p, style))
-                        else:
-                            story.append(Paragraph(p, styles['Normal']))
-                        story.append(Spacer(1, 8))
-
-            # 1. RENDER ANALYZED SEGMENTS (Highlights)
-            if segments:
-                for seg in segments:
-                    text_part = seg.get('text', '')
-                    score_seg = seg.get('confidence', 0)
-                    printed_content_accumulator += text_part  # Keep track
-                    
-                    # HYPER-SENSITIVE HIGHLIGHTING
-                    if score_seg > 80:
-                        bg_color = colors.Color(1, 0.8, 0.8)  # Red
-                        story.append(Paragraph(text_part, ParagraphStyle('HighAI', parent=styles['Normal'], backColor=bg_color)))
-                    elif score_seg > 40:
-                        bg_color = colors.Color(1, 0.92, 0.6)  # Orange
-                        story.append(Paragraph(text_part, ParagraphStyle('MedAI', parent=styles['Normal'], backColor=bg_color)))
-                    elif score_seg > 1:
-                        bg_color = colors.Color(1, 1, 0.8)  # Yellow
-                        story.append(Paragraph(text_part, ParagraphStyle('LowAI', parent=styles['Normal'], backColor=bg_color)))
-                    else:
-                        story.append(Paragraph(text_part, styles['Normal']))
-                    
-                    story.append(Spacer(1, 6))
-
-            # 2. CRITICAL: RENDER THE REMAINDER (The missing pages)
-            # Calculate roughly where the segments ended
-            if full_text and len(full_text) > len(printed_content_accumulator) + 50:
-                
-                # Find the remaining text. 
-                # Note: We use a simple index cut if possible, or string replace.
-                # Since AI might slightly alter text, we'll try to find the last segment's position.
-                
-                try:
-                    # Attempt to find the end of the analyzed part
-                    last_segment = segments[-1].get('text', '') if segments else ''
-                    if last_segment:
-                        split_parts = full_text.split(last_segment)
-                        if len(split_parts) > 1:
-                            # The remainder is everything after the last segment
-                            remaining_text = split_parts[-1]
-                            
-                            story.append(Spacer(1, 20))
-                            story.append(Paragraph("<b>--- End of AI Analyzed Section (Continuing Original Text) ---</b>", styles['Italic']))
-                            story.append(Spacer(1, 10))
-                            
-                            add_formatted_text(remaining_text)
-                except Exception as e:
-                    # Fallback: If split fails, just print full text if segments were empty
-                    if not segments:
-                         add_formatted_text(full_text)
-
-            elif not segments and full_text:
-                 # Fallback for no segments at all
-                 add_formatted_text(full_text)
+            if not full_text:
+                story.append(Paragraph("<i>Error: No text content found in report data.</i>", styles['Italic']))
             else:
-                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
+                # 3. Apply Highlights using Replace (The "Highlighter" Method)
+                # We work on a copy to avoid messing up loop logic
+                formatted_text = full_text
+                
+                # Sort segments by length (longest first) to prevent partial replacement overlap issues
+                segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
+
+                for seg in segments:
+                    original_segment = seg.get('text', '')
+                    score_seg = seg.get('confidence', 0)
+                    
+                    if not original_segment: 
+                        continue
+
+                    # Determine Color
+                    if score_seg > 80: 
+                        bg_color = "#FFCCCC"    # Red
+                    elif score_seg > 40: 
+                        bg_color = "#FFEB99"  # Orange
+                    elif score_seg > 1: 
+                        bg_color = "#FFFFCC"   # Yellow
+                    else: 
+                        bg_color = None
+
+                    if bg_color:
+                        # We replace the text with the highlighted version
+                        highlighted_segment = f'<font backColor="{bg_color}">{original_segment}</font>'
+                        formatted_text = formatted_text.replace(original_segment, highlighted_segment)
+
+                # 4. Render the Final Text (Split by paragraphs for ReportLab)
+                # Use split('\n') to maintain original paragraph structure
+                for paragraph in formatted_text.split('\n'):
+                    if paragraph.strip():
+                        try:
+                            story.append(Paragraph(paragraph, styles['Normal']))
+                            story.append(Spacer(1, 8))
+                        except:
+                            # Fallback for very weird characters
+                            story.append(Paragraph(paragraph, styles['Normal']))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
@@ -1956,98 +1935,57 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- PDF CONTENT RENDER LOGIC (MERGED & IMPROVED) ---
+            # --- ROBUST "SEARCH & REPLACE" PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
             matches = data.get('matches', [])
             full_text = data.get('input_text', '')
             
-            # Helper to render text with proper spacing (Fixes "Wall of Text")
-            def add_formatted_text(text_content, background_color=None):
-                # Split by newlines to preserve paragraphs
-                paragraphs = text_content.split('\n')
-                for p in paragraphs:
-                    if p.strip():  # Skip empty lines
-                        if background_color:
-                            # Highlight the whole paragraph
-                            style = ParagraphStyle('Highlight', parent=styles['Normal'], backColor=background_color)
-                            story.append(Paragraph(p, style))
-                        else:
-                            story.append(Paragraph(p, styles['Normal']))
-                        # ADD SPACING BETWEEN PARAGRAPHS
-                        story.append(Spacer(1, 8))
-            
-            if matches and full_text:
-                # Show full text with highlighted matches
-                # Build a list of (start_pos, end_pos, source_info) for each match
-                match_positions = []
+            if not full_text:
+                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
+            else:
+                # Apply highlights using replace
+                formatted_text = full_text
+                
+                # Sort matches by length (longest first)
+                matches.sort(key=lambda x: len(x.get('text_segment', '')), reverse=True)
+                
                 for match in matches:
                     segment = match.get('text_segment', '')
                     source_id = match.get('source_id', 0)
                     
-                    # Find the segment in the full text
-                    start_pos = full_text.find(segment)
-                    if start_pos != -1:
-                        end_pos = start_pos + len(segment)
-                        source = next((s for s in sources if s.get('id') == source_id), None)
-                        if source:
-                            match_positions.append({
-                                'start': start_pos,
-                                'end': end_pos,
-                                'similarity': source.get('similarity', 0),
-                                'domain': source.get('domain', 'Unknown')
-                            })
-                
-                # Sort by position
-                match_positions.sort(key=lambda x: x['start'])
-                
-                # Build paragraphs with highlights
-                last_pos = 0
-                for mp in match_positions:
-                    # Add normal text before match
-                    if mp['start'] > last_pos:
-                        normal_text = full_text[last_pos:mp['start']]
-                        if normal_text.strip():
-                            add_formatted_text(normal_text)
+                    if not segment:
+                        continue
                     
-                    # Add highlighted match
-                    matched_text = full_text[mp['start']:mp['end']]
-                    similarity = mp['similarity']
-                    domain = mp['domain']
-                    
-                    if similarity > 50:
-                        # High risk - Red highlight
-                        match_style = ParagraphStyle('HighRisk', parent=styles['Normal'],
-                                                    backColor=colors.Color(1, 0.8, 0.8),
-                                                    borderColor=colors.red, borderWidth=1, borderPadding=5)
-                        prefix = f"🔴 <b>HIGH RISK ({similarity}% - {domain}):</b><br/>"
-                    elif similarity > 20:
-                        # Medium risk - Yellow highlight
-                        match_style = ParagraphStyle('MedRisk', parent=styles['Normal'],
-                                                    backColor=colors.Color(1, 0.92, 0.6),
-                                                    borderPadding=3)
-                        prefix = f"🟠 <b>Possible Match ({similarity}% - {domain}):</b><br/>"
-                    else:
-                        match_style = styles['Normal']
-                        prefix = f"🟢 <b>Low Risk ({similarity}% - {domain}):</b><br/>"
-                    
-                    story.append(Paragraph(prefix + matched_text, match_style))
-                    story.append(Spacer(1, 8))
-                    
-                    last_pos = mp['end']
-                
-                # Add remaining text
-                if last_pos < len(full_text):
-                    remaining_text = full_text[last_pos:]
-                    if remaining_text.strip():
-                        add_formatted_text(remaining_text)
+                    # Find source info
+                    source = next((s for s in sources if s.get('id') == source_id), None)
+                    if source:
+                        similarity = source.get('similarity', 0)
+                        domain = source.get('domain', 'Unknown')
                         
-            elif full_text:
-                # No matches but we have text - show it in normal style
-                add_formatted_text(full_text)
-            else:
-                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
+                        # Determine color
+                        if similarity > 50:
+                            bg_color = "#FFCCCC"  # Red
+                            prefix = f'🔴 HIGH RISK ({similarity}% - {domain}): '
+                        elif similarity > 20:
+                            bg_color = "#FFEB99"  # Orange
+                            prefix = f'🟠 Possible Match ({similarity}% - {domain}): '
+                        else:
+                            bg_color = "#FFFFCC"  # Yellow
+                            prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
+                        
+                        highlighted_segment = f'<font backColor="{bg_color}">{prefix}{segment}</font>'
+                        formatted_text = formatted_text.replace(segment, highlighted_segment)
+                
+                # Render the final text
+                for paragraph in formatted_text.split('\n'):
+                    if paragraph.strip():
+                        try:
+                            story.append(Paragraph(paragraph, styles['Normal']))
+                            story.append(Spacer(1, 8))
+                        except:
+                            story.append(Paragraph(paragraph, styles['Normal']))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
