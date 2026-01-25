@@ -135,13 +135,6 @@
         display: block;
     }
 
-    .result-title {
-        font-size: 24px;
-        font-weight: 700;
-        margin-bottom: 15px;
-        color: var(--neon-purple);
-    }
-
     .info-box {
         background: rgba(181, 55, 242, 0.1);
         border: 1px solid var(--neon-purple);
@@ -177,16 +170,16 @@
 <div class="container">
     <div class="page-header">
         <h1>🔍 The Detective</h1>
-        <p>3-Agent Plagiarism Detection with Source Verification</p>
+        <p>Scribbr-Style Plagiarism Detection with Interactive Dashboard</p>
     </div>
 
     <div class="tool-section">
         <div class="info-box">
             <h3>How The Detective Works:</h3>
             <ul>
-                <li><strong>Step 1 - The Hunter (Gemini):</strong> Scans the web for matching sources and verifies link status</li>
-                <li><strong>Step 2 - The Analyst (GPT-4o):</strong> Compares your text with sources to detect copying and paraphrasing</li>
-                <li><strong>Step 3 - The Reporter (Claude):</strong> Generates professional PDF report with highlighted matches</li>
+                <li><strong>Web Search:</strong> Scans the internet for matching sources using Google Custom Search</li>
+                <li><strong>AI Analysis:</strong> Uses Gemini to detect plagiarism patterns and calculate similarity scores</li>
+                <li><strong>Interactive Dashboard:</strong> Displays results in a Scribbr-style circular gauge with source list</li>
             </ul>
         </div>
 
@@ -205,9 +198,7 @@
         <button class="btn-neon" id="checkBtn" onclick="startPlagiarismCheck()">Pay £10 & Check Plagiarism</button>
 
         <div class="result-box" id="resultBox">
-            <div class="result-title">✅ Analysis Complete!</div>
-            <p id="resultText"></p>
-            <button class="btn-neon" id="downloadBtn" style="margin-top: 20px;">Download PDF Report</button>
+            <!-- HTML Dashboard will be injected here -->
         </div>
     </div>
 </div>
@@ -345,20 +336,15 @@
             
             const data = await response.json();
             
-            if (data.success) {
+            if (data.success && data.html) {
+                // CRITICAL FIX: Inject HTML Dashboard directly
                 const resultBox = document.getElementById('resultBox');
-                const resultText = document.getElementById('resultText');
-                const downloadBtn = document.getElementById('downloadBtn');
-                
-                resultText.textContent = 'Your plagiarism report has been generated! The 3-agent team has analyzed your text, verified sources, and created a comprehensive PDF report.';
-                
-                downloadBtn.onclick = () => {
-                    window.location.href = data.pdf_url;
-                };
-                
+                resultBox.innerHTML = data.html;
                 resultBox.classList.add('active');
+                
+                console.log('✅ Scribbr-style dashboard rendered successfully');
             } else {
-                alert('Error: ' + data.error);
+                alert('Error: ' + (data.error || 'No visual data returned'));
             }
         } catch (error) {
             alert('Error: ' + error.message);
