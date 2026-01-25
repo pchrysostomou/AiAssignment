@@ -654,7 +654,8 @@ def check_ai_consensus(text):
     return {
         "ai_score": final_score,
         "segments": gpt_data.get('segments', []),
-        "breakdown": f"GPT:{gpt_score}% | Gem:{gemini_score}% | Claude:{claude_score}%"
+        "breakdown": f"GPT:{gpt_score}% | Gem:{gemini_score}% | Claude:{claude_score}%",
+        "input_text": text  # CRITICAL: Save the original text
     }
 
 # --- HEARTBEAT MECHANISM FOR SSE KEEPALIVE ---
@@ -1641,6 +1642,9 @@ def check_plagiarism():
     # Use simpler logic to avoid JSON crashes
     findings = plagiarism_hunter_gemini(text)
     
+    # CRITICAL: Save the original input text
+    findings['input_text'] = text
+    
     # Visuals
     colors_list = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
     source_colors = {s.get('id'): colors_list[i % len(colors_list)] for i, s in enumerate(findings.get('sources', []))}
@@ -1729,12 +1733,12 @@ def check_ai():
     
     print("🤖 RESCUE FIX: AI detection with guaranteed text visibility...")
     
-    # 1. Get Data (Consensus)
+    # 1. Get Data (Consensus) - now includes input_text
     try:
         data = check_ai_consensus(text)
     except Exception as e:
         print(f"❌ Consensus Error: {e}")
-        data = {"ai_score": 0, "segments": []}
+        data = {"ai_score": 0, "segments": [], "input_text": text}
 
     # 2. Build HTML Content (CRITICAL FIX FOR EMPTY BOX)
     content_html = ""
@@ -1839,18 +1843,20 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # Highlighted Text with Color Coding
-            story.append(Paragraph("<b>Analysis (Red = High AI Confidence, Yellow = Medium):</b>", styles['Heading3']))
+            # --- PDF CONTENT RENDER LOGIC ---
+            story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 10))
-            
+
+            # 1. Try to get text from 'segments' (if detailed analysis exists)
             segments = data.get('segments', [])
-            if not segments:
-                story.append(Paragraph("No segment analysis available.", styles['Normal']))
-            else:
+            full_text = data.get('input_text', '')
+
+            if segments:
+                # Reconstruct text with highlights
                 for seg in segments:
+                    text_content = seg.get('text', '')
                     is_ai = seg.get('is_ai', False)
                     confidence = seg.get('confidence', 0)
-                    text_content = seg.get('text', '')
                     
                     if is_ai:
                         if confidence > 75:
@@ -1871,6 +1877,14 @@ def export_pdf_dynamic(report_id):
                         story.append(Paragraph(f"🟢 {text_content}", styles['Normal']))
                     
                     story.append(Spacer(1, 8))
+
+            elif full_text:
+                # Fallback: If no segments but we have text (Low AI score scenario)
+                # Just print the text in black
+                story.append(Paragraph(full_text, styles['Normal']))
+                
+            else:
+                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
@@ -1907,42 +1921,83 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # Matched Segments with Highlights
-            story.append(Paragraph("<b>Matched Text Segments:</b>", styles['Heading3']))
+            # --- PDF CONTENT RENDER LOGIC ---
+            story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 10))
             
             matches = data.get('matches', [])
-            if not matches:
-                story.append(Paragraph("No specific matches found.", styles['Normal']))
-            else:
+            full_text = data.get('input_text', '')
+            
+            if matches and full_text:
+                # Show full text with highlighted matches
+                # Build a list of (start_pos, end_pos, source_info) for each match
+                match_positions = []
                 for match in matches:
                     segment = match.get('text_segment', '')
                     source_id = match.get('source_id', 0)
                     
-                    # Find corresponding source
-                    source = next((s for s in sources if s.get('id') == source_id), None)
-                    if source:
-                        similarity = source.get('similarity', 0)
-                        domain = source.get('domain', 'Unknown')
+                    # Find the segment in the full text
+                    start_pos = full_text.find(segment)
+                    if start_pos != -1:
+                        end_pos = start_pos + len(segment)
+                        source = next((s for s in sources if s.get('id') == source_id), None)
+                        if source:
+                            match_positions.append({
+                                'start': start_pos,
+                                'end': end_pos,
+                                'similarity': source.get('similarity', 0),
+                                'domain': source.get('domain', 'Unknown')
+                            })
+                
+                # Sort by position
+                match_positions.sort(key=lambda x: x['start'])
+                
+                # Build paragraphs with highlights
+                last_pos = 0
+                for mp in match_positions:
+                    # Add normal text before match
+                    if mp['start'] > last_pos:
+                        normal_text = full_text[last_pos:mp['start']]
+                        if normal_text.strip():
+                            story.append(Paragraph(normal_text, styles['Normal']))
+                    
+                    # Add highlighted match
+                    matched_text = full_text[mp['start']:mp['end']]
+                    similarity = mp['similarity']
+                    domain = mp['domain']
+                    
+                    if similarity > 50:
+                        # High risk - Red highlight
+                        match_style = ParagraphStyle('HighRisk', parent=styles['Normal'],
+                                                    backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
+                                                    borderColor=colors.red, borderWidth=1, borderPadding=5)
+                        prefix = f"🔴 <b>HIGH RISK ({similarity}% - {domain}):</b><br/>"
+                    elif similarity > 20:
+                        # Medium risk - Yellow highlight
+                        match_style = ParagraphStyle('MedRisk', parent=styles['Normal'],
+                                                    backColor=colors.Color(1, 0.84, 0, alpha=0.2),
+                                                    borderPadding=3)
+                        prefix = f"🟠 <b>Possible Match ({similarity}% - {domain}):</b><br/>"
+                    else:
+                        match_style = styles['Normal']
+                        prefix = f"🟢 <b>Low Risk ({similarity}% - {domain}):</b><br/>"
+                    
+                    story.append(Paragraph(prefix + matched_text, match_style))
+                    story.append(Spacer(1, 8))
+                    
+                    last_pos = mp['end']
+                
+                # Add remaining text
+                if last_pos < len(full_text):
+                    remaining_text = full_text[last_pos:]
+                    if remaining_text.strip():
+                        story.append(Paragraph(remaining_text, styles['Normal']))
                         
-                        if similarity > 50:
-                            # High risk - Red highlight
-                            match_style = ParagraphStyle('HighRisk', parent=styles['Normal'],
-                                                        backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
-                                                        borderColor=colors.red, borderWidth=1, borderPadding=5)
-                            prefix = f"🔴 <b>HIGH RISK ({similarity}% - {domain}):</b><br/>"
-                        elif similarity > 20:
-                            # Medium risk - Yellow highlight
-                            match_style = ParagraphStyle('MedRisk', parent=styles['Normal'],
-                                                        backColor=colors.Color(1, 0.84, 0, alpha=0.2),
-                                                        borderPadding=3)
-                            prefix = f"🟠 <b>Possible Match ({similarity}% - {domain}):</b><br/>"
-                        else:
-                            match_style = styles['Normal']
-                            prefix = f"🟢 <b>Low Risk ({similarity}% - {domain}):</b><br/>"
-                        
-                        story.append(Paragraph(prefix + segment, match_style))
-                        story.append(Spacer(1, 12))
+            elif full_text:
+                # No matches but we have text - show it in normal style
+                story.append(Paragraph(full_text, styles['Normal']))
+            else:
+                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
