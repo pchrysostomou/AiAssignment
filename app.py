@@ -1843,45 +1843,75 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- PDF CONTENT RENDER LOGIC ---
+            # --- PDF CONTENT RENDER LOGIC (MERGED & IMPROVED) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 12))
 
-            # 1. Try to get text from 'segments' (if detailed analysis exists)
+            # Get data
             segments = data.get('segments', [])
             full_text = data.get('input_text', '')
 
-            if segments:
-                # Reconstruct text with highlights
-                for seg in segments:
-                    text_content = seg.get('text', '')
-                    is_ai = seg.get('is_ai', False)
-                    confidence = seg.get('confidence', 0)
-                    
-                    if is_ai:
-                        if confidence > 75:
-                            # High confidence - Red background
-                            highlight_style = ParagraphStyle('HighAI', parent=styles['Normal'], 
-                                                            backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
-                                                            borderColor=colors.red, borderWidth=1, borderPadding=3)
-                            prefix = f"🔴 <b>HIGH AI ({confidence}%):</b> "
+            # Helper to render text with proper spacing (Fixes "Wall of Text")
+            def add_formatted_text(text_content, background_color=None):
+                # Split by newlines to preserve paragraphs
+                paragraphs = text_content.split('\n')
+                for p in paragraphs:
+                    if p.strip():  # Skip empty lines
+                        if background_color:
+                            # Highlight the whole paragraph
+                            style = ParagraphStyle('Highlight', parent=styles['Normal'], backColor=background_color)
+                            story.append(Paragraph(p, style))
                         else:
-                            # Medium confidence - Yellow background
-                            highlight_style = ParagraphStyle('MedAI', parent=styles['Normal'],
-                                                            backColor=colors.Color(1, 0.84, 0, alpha=0.2))
-                            prefix = f"🟡 <b>Medium AI ({confidence}%):</b> "
-                        
-                        story.append(Paragraph(prefix + text_content, highlight_style))
-                    else:
-                        # Human-written - Normal style
-                        story.append(Paragraph(f"🟢 {text_content}", styles['Normal']))
+                            story.append(Paragraph(p, styles['Normal']))
+                        # ADD SPACING BETWEEN PARAGRAPHS
+                        story.append(Spacer(1, 8))
+
+            if segments:
+                # Reconstruct text with segments using Gradient Sensitivity
+                for seg in segments:
+                    text_part = seg.get('text', '')
+                    score_seg = seg.get('confidence', 0)
                     
-                    story.append(Spacer(1, 8))
+                    # HYPER-SENSITIVE THRESHOLDS (>1%)
+                    if score_seg > 80:
+                        # HIGH PROBABILITY -> RED (MistyRose)
+                        bg_color = colors.Color(1, 0.8, 0.8)  # #FFCCCC
+                        story.append(Paragraph(text_part, ParagraphStyle('HighAI', parent=styles['Normal'], backColor=bg_color)))
+                    
+                    elif score_seg > 40:
+                        # MEDIUM PROBABILITY -> ORANGE/GOLD
+                        bg_color = colors.Color(1, 0.92, 0.6)  # #FFEB99
+                        story.append(Paragraph(text_part, ParagraphStyle('MedAI', parent=styles['Normal'], backColor=bg_color)))
+                        
+                    elif score_seg > 1:
+                        # LOW PROBABILITY (2-40%) -> LIGHT YELLOW
+                        # User wants to see EVERYTHING
+                        bg_color = colors.Color(1, 1, 0.8)  # #FFFFCC
+                        story.append(Paragraph(text_part, ParagraphStyle('LowAI', parent=styles['Normal'], backColor=bg_color)))
+                        
+                    else:
+                        # 0-1% Score -> No Highlight
+                        story.append(Paragraph(text_part, styles['Normal']))
+                    
+                    # Small spacer for readability between segments
+                    story.append(Spacer(1, 6))
 
             elif full_text:
-                # Fallback: If no segments but we have text (Low AI score scenario)
-                # Just print the text in black
-                story.append(Paragraph(full_text, styles['Normal']))
+                # FALLBACK: If no segments, tint based on overall score
+                overall_score = data.get('ai_score', 0)
+                bg_color = None
+                
+                if overall_score > 80:
+                    bg_color = colors.Color(1, 0.8, 0.8)  # Red tint
+                    story.append(Paragraph(f"<i>(Note: Segments not detected, but High Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
+                elif overall_score > 40:
+                    bg_color = colors.Color(1, 0.92, 0.6)  # Orange tint
+                    story.append(Paragraph(f"<i>(Note: Segments not detected, but Medium Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
+                elif overall_score > 1:
+                    bg_color = colors.Color(1, 1, 0.8)  # Yellow tint
+                    story.append(Paragraph(f"<i>(Note: Segments not detected, but Low Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
+                
+                add_formatted_text(full_text, bg_color)
                 
             else:
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
@@ -1921,12 +1951,27 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- PDF CONTENT RENDER LOGIC ---
+            # --- PDF CONTENT RENDER LOGIC (MERGED & IMPROVED) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 12))
             
             matches = data.get('matches', [])
             full_text = data.get('input_text', '')
+            
+            # Helper to render text with proper spacing (Fixes "Wall of Text")
+            def add_formatted_text(text_content, background_color=None):
+                # Split by newlines to preserve paragraphs
+                paragraphs = text_content.split('\n')
+                for p in paragraphs:
+                    if p.strip():  # Skip empty lines
+                        if background_color:
+                            # Highlight the whole paragraph
+                            style = ParagraphStyle('Highlight', parent=styles['Normal'], backColor=background_color)
+                            story.append(Paragraph(p, style))
+                        else:
+                            story.append(Paragraph(p, styles['Normal']))
+                        # ADD SPACING BETWEEN PARAGRAPHS
+                        story.append(Spacer(1, 8))
             
             if matches and full_text:
                 # Show full text with highlighted matches
@@ -1959,7 +2004,7 @@ def export_pdf_dynamic(report_id):
                     if mp['start'] > last_pos:
                         normal_text = full_text[last_pos:mp['start']]
                         if normal_text.strip():
-                            story.append(Paragraph(normal_text, styles['Normal']))
+                            add_formatted_text(normal_text)
                     
                     # Add highlighted match
                     matched_text = full_text[mp['start']:mp['end']]
@@ -1969,13 +2014,13 @@ def export_pdf_dynamic(report_id):
                     if similarity > 50:
                         # High risk - Red highlight
                         match_style = ParagraphStyle('HighRisk', parent=styles['Normal'],
-                                                    backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
+                                                    backColor=colors.Color(1, 0.8, 0.8),
                                                     borderColor=colors.red, borderWidth=1, borderPadding=5)
                         prefix = f"🔴 <b>HIGH RISK ({similarity}% - {domain}):</b><br/>"
                     elif similarity > 20:
                         # Medium risk - Yellow highlight
                         match_style = ParagraphStyle('MedRisk', parent=styles['Normal'],
-                                                    backColor=colors.Color(1, 0.84, 0, alpha=0.2),
+                                                    backColor=colors.Color(1, 0.92, 0.6),
                                                     borderPadding=3)
                         prefix = f"🟠 <b>Possible Match ({similarity}% - {domain}):</b><br/>"
                     else:
@@ -1991,11 +2036,11 @@ def export_pdf_dynamic(report_id):
                 if last_pos < len(full_text):
                     remaining_text = full_text[last_pos:]
                     if remaining_text.strip():
-                        story.append(Paragraph(remaining_text, styles['Normal']))
+                        add_formatted_text(remaining_text)
                         
             elif full_text:
                 # No matches but we have text - show it in normal style
-                story.append(Paragraph(full_text, styles['Normal']))
+                add_formatted_text(full_text)
             else:
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
 
