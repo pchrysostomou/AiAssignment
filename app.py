@@ -404,7 +404,7 @@ def clean_and_parse_json(response_text):
     except Exception as e:
         print(f"JSON Error: {e}")
         # Return safe fallback structure
-        return {"score": 0, "sources": [], "ai_score": 0, "segments": []}
+        return {"score": 0, "sources": [], "matches": [], "ai_score": 0, "segments": []}
 
 # --- TOKEN TRUNCATION HELPER ---
 def truncate_text(text, max_tokens=10000):
@@ -547,6 +547,41 @@ def check_url_status(url):
         return response.status_code == 200
     except:
         return False
+
+# --- PLAGIARISM HUNTER WITH SOURCE MAPPING ---
+def plagiarism_hunter_gemini(text):
+    """
+    Enhanced plagiarism detection with source mapping for color-coded highlights.
+    Returns structure with sources and matched text segments.
+    """
+    prompt = f"""Analyze text for plagiarism with SOURCE MAPPING.
+TEXT: {text[:4000]}...
+
+Return STRICT JSON structure:
+{{
+    "score": 0-100,
+    "sources": [
+        {{"id": 1, "domain": "wikipedia.org", "url": "https://en.wikipedia.org/...", "similarity": 20}}
+    ],
+    "matches": [
+        {{"text_segment": "exact text copied from source...", "source_id": 1}}
+    ]
+}}
+
+CRITICAL RULES:
+1. URLs MUST start with https:// or http://
+2. Each match must reference a source_id
+3. text_segment should be verbatim copied text (10+ words)
+4. Assign unique IDs (1, 2, 3...) to each source"""
+    
+    try:
+        raw = call_gemini(prompt)
+        findings = clean_and_parse_json(raw)
+        print(f"✅ Plagiarism hunter returned: {findings}")
+        return findings
+    except Exception as e:
+        print(f"❌ Plagiarism hunter error: {str(e)}")
+        return {"score": 0, "sources": [], "matches": []}
 
 # --- 3-AGENT CONSENSUS FOR AI DETECTION ---
 def check_ai_consensus(text):
@@ -1366,7 +1401,6 @@ def billing():
     payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.created_at.desc()).all()
     return render_template('billing.html', payments=payments, user=current_user)
 
-# FIX #4: UPDATE MY_ESSAYS ROUTE - UNIFIED VIEW WITH REPORTS
 @app.route('/my-essays')
 @login_required
 def my_essays():
@@ -1571,29 +1605,69 @@ def generate_essay():
         }
     )
 
-# FIX #3: REFACTOR CHECK_PLAGIARISM - DARK MODE + DB STORAGE
+# FINAL POLISH: PLAGIARISM CHECKER WITH COLOR-CODED HIGHLIGHTS + BROKEN LINK FIX + EXPORT
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """SCRIBBR-STYLE PLAGIARISM DETECTION - DARK MODE + DB STORAGE"""
+    """SCRIBBR-STYLE PLAGIARISM DETECTION - COLOR-CODED HIGHLIGHTS + EXPORT"""
     text = request.form.get('text')
     if not text: 
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 PLAGIARISM CHECK: Starting Scribbr-style detection...")
+    print("🔍 PLAGIARISM CHECK: Starting color-coded detection...")
     
-    # 1. Get Data (Fail-safe)
-    try:
-        prompt = f"""Analyze for plagiarism. TEXT: {text[:4000]}...
-        Return STRICT JSON: {{"score": 0-100, "sources": [{{"url": "...", "domain": "...", "similarity": 0-100, "matched_text": "..."}}]}}"""
-        raw_response = call_gemini(prompt)
-        findings = clean_and_parse_json(raw_response)
-        print(f"✅ Gemini returned findings: {findings}")
-    except Exception as e:
-        print(f"❌ Gemini error: {str(e)}")
-        findings = {"score": 0, "sources": []}
-
-    # 2. SAVE TO DB
+    # 1. Get Data with Source Mapping
+    findings = plagiarism_hunter_gemini(text)
+    
+    # 2. Define Neon Color Palette (5 distinct colors)
+    colors = ['#FF007F', '#00E5FF', '#76FF03', '#FFD600', '#D500F9']  # Pink, Cyan, Lime, Yellow, Purple
+    
+    # 3. Map Source IDs to Colors
+    source_colors = {}
+    for idx, s in enumerate(findings.get('sources', [])):
+        source_colors[s.get('id')] = colors[idx % len(colors)]
+    
+    # 4. Generate Source List HTML (Left Side) with FIXED LINKS
+    sources_html = ''
+    for s in findings.get('sources', []):
+        color = source_colors.get(s.get('id'), '#ccc')
+        url = s.get('url', '#')
+        
+        # FIX BROKEN LINKS: Ensure https:// prefix
+        if url and url != '#' and not url.startswith('http'):
+            url = 'https://' + url
+        
+        domain = s.get('domain', 'Unknown')
+        similarity = s.get('similarity', 0)
+        
+        sources_html += f'''
+        <div style="border-left: 4px solid {color}; background: #252526; margin-bottom: 10px; padding: 10px; border-radius: 4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.05em;">
+                    {domain} 🔗
+                </a>
+                <span style="color:white; font-weight:bold; font-size:0.95em;">{similarity}%</span>
+            </div>
+        </div>'''
+    
+    if not sources_html:
+        sources_html = '<p style="padding:20px; text-align:center; color:#666;">No suspicious sources detected.</p>'
+    
+    # 5. Highlight Text (Right Side) with Color-Coded Matches
+    highlighted_text = text
+    for match in findings.get('matches', []):
+        segment = match.get('text_segment', '')
+        sid = match.get('source_id')
+        color = source_colors.get(sid, 'transparent')
+        
+        if segment and len(segment) > 10:
+            # Wrap matched text in colored underline + subtle background
+            highlighted_text = highlighted_text.replace(
+                segment, 
+                f'<span style="border-bottom: 3px solid {color}; background: {color}20; padding: 2px 0;">{segment}</span>'
+            )
+    
+    # 6. Save Report to DB
     try:
         report = Report(
             user_id=current_user.id,
@@ -1607,71 +1681,53 @@ def check_plagiarism():
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
     
-    # 3. GENERATE DARK MODE UI
+    # 7. Render Dashboard with Export Button
     score = findings.get('score', 0)
-    color = '#ff5252' if score > 20 else '#4caf50'
-    
-    sources_html = ''
-    for s in findings.get('sources', []):
-        url = s.get('url', '#')
-        domain = s.get('domain', 'Unknown')
-        matched_text = s.get('matched_text', '')[:90]
-        similarity = s.get('similarity', 0)
-        
-        sources_html += f'''
-        <div style="border-bottom: 1px solid #333; padding: 15px 0; display:flex; justify-content:space-between; align-items:center;">
-            <div style="max-width: 75%;">
-                <a href="{url}" target="_blank" style="color:#64b5f6; font-weight:bold; text-decoration:none; font-size:1.1em;">
-                    {domain} 🔗
-                </a>
-                <p style="margin:5px 0 0; color:#9e9e9e; font-size:0.9em;">"{matched_text}..."</p>
-            </div>
-            <span style="background:{'rgba(231, 76, 60, 0.2)' if similarity > 20 else 'rgba(46, 204, 113, 0.2)'}; color:{'#ff8a80' if similarity > 20 else '#a5d6a7'}; padding:5px 12px; border-radius:20px; font-weight:bold;">
-                {similarity}%
-            </span>
-        </div>'''
-    
-    if not sources_html:
-        sources_html = '<p style="padding:20px; text-align:center; color:#666;">No suspicious sources detected.</p>'
+    gauge_color = '#f44336' if score > 20 else '#4caf50'
     
     html_result = f"""
-    <div style="display: flex; gap: 20px; margin-top: 20px; font-family: sans-serif;">
-        <div style="flex: 2; background: #1e1e1e; padding: 25px; border-radius: 12px; border: 1px solid #333;">
-            <h3 style="color: #e0e0e0; border-bottom: 1px solid #333; padding-bottom: 15px; margin-top:0;">🔍 Detected Sources</h3>
+    <div style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; color: #e0e0e0;">
+        <div style="flex: 1; overflow-y: auto; padding-right: 10px;">
+            <h3 style="margin-top:0; color:#e0e0e0;">🎨 Detected Sources</h3>
             {sources_html}
         </div>
         
-        <div style="flex: 1; text-align: center; background: #1e1e1e; padding: 30px; border-radius: 12px; border: 1px solid #333; height: fit-content;">
-            <div style="width:160px; height:160px; border-radius:50%; border:15px solid {color}; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow: 0 0 20px {color}40;">
-                <h1 style="font-size:3.5em; margin:0; color: #e0e0e0;">{score}%</h1>
-            </div>
-            <h3 style="color:#b0bec5; margin-top:25px;">Plagiarism Risk</h3>
+        <div style="flex: 2; background: #1e1e1e; padding: 25px; border-radius: 8px; border: 1px solid #333; overflow-y: scroll; line-height: 1.8; font-size: 1.05em;">
+            {highlighted_text}
         </div>
-    </div>
-    """
+        
+        <div style="flex: 0 0 150px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 15px;">
+            <div style="width:120px; height:120px; border-radius:50%; border:10px solid {gauge_color}; display:flex; align-items:center; justify-content:center; box-shadow: 0 0 15px {gauge_color}40;">
+                <h1 style="font-size:2.5em; margin:0; color:#e0e0e0;">{score}%</h1>
+            </div>
+            <button onclick="window.print()" style="background:#333; color:white; border:1px solid #555; padding:10px 16px; cursor:pointer; border-radius:4px; font-size:0.9em; font-weight:bold;">
+                🖨️ Save PDF
+            </button>
+        </div>
+    </div>"""
     
-    print("✅ PLAGIARISM CHECK: Returning Dark Mode HTML")
+    print("✅ PLAGIARISM CHECK: Returning color-coded HTML with export")
     return jsonify({'success': True, 'html': html_result})
 
-# FIX #2: REFACTOR CHECK_AI - DARK MODE + CRASH PREVENTION + DB STORAGE
+# FINAL POLISH: AI DETECTOR WITH VIBRANT HIGHLIGHTS + EXPORT
 @app.route('/check-ai', methods=['POST'])
 @login_required
 def check_ai():
-    """TURNITIN-STYLE AI DETECTION - DARK MODE + 3-AGENT CONSENSUS + DB STORAGE"""
+    """TURNITIN-STYLE AI DETECTION - VIBRANT HIGHLIGHTS + EXPORT"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🤖 AI DETECTION: Starting 3-agent consensus analysis...")
+    print("🤖 AI DETECTION: Starting 3-agent consensus with vibrant highlights...")
     
-    # 1. FAIL-SAFE DATA RETRIEVAL (Fixes JSON Crash)
+    # 1. FAIL-SAFE DATA RETRIEVAL
     try:
         data = check_ai_consensus(text)
     except Exception as e:
         print(f"❌ AI Check Crash: {e}")
-        data = {"ai_score": 0, "segments": []}  # Prevent UI break
-
-    # 2. SAVE REPORT TO DB (For 'My Essays')
+        data = {"ai_score": 0, "segments": []}
+    
+    # 2. SAVE REPORT TO DB
     try:
         report = Report(
             user_id=current_user.id,
@@ -1685,7 +1741,7 @@ def check_ai():
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
     
-    # 3. GENERATE DARK MODE UI
+    # 3. GENERATE VIBRANT HIGHLIGHTS (Increased Opacity for Dark Mode)
     content_html = ""
     segments = data.get('segments', [])
     
@@ -1693,30 +1749,32 @@ def check_ai():
         content_html = f"<span>{text}</span>"
     else:
         for seg in segments:
-            # Subtle Turnitin-style highlights compatible with Dark Mode
             bg = "transparent"
             if seg.get('is_ai'):
-                # Red for high confidence, Yellow/Orange for medium
-                bg = "rgba(231, 76, 60, 0.4)" if seg.get('confidence', 0) > 75 else "rgba(241, 196, 15, 0.3)"
+                # VIBRANT NEON COLORS for Dark Mode visibility
+                # Red = rgba(255, 60, 60, 0.3), Yellow = rgba(255, 200, 0, 0.25)
+                bg = "rgba(255, 60, 60, 0.3)" if seg.get('confidence', 0) > 75 else "rgba(255, 200, 0, 0.25)"
             content_html += f'<span style="background-color:{bg}; border-radius:3px; padding:2px 0;">{seg["text"]}</span> '
-
+    
+    # 4. Render Dashboard with Export Button
     html_result = f"""
     <div style="display: flex; gap: 20px; height: 500px; font-family: sans-serif;">
         <div style="flex: 3; background: #1e1e1e; color: #e0e0e0; padding: 25px; border-radius: 12px; border: 1px solid #333; overflow-y: scroll; line-height: 1.8; font-size: 1.1em;">
             {content_html}
         </div>
         
-        <div style="flex: 1; background: #252526; border: 1px solid #333; color: white; padding: 25px; border-radius: 12px; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+        <div style="flex: 1; background: #252526; border: 1px solid #333; color: white; padding: 25px; border-radius: 12px; text-align: center; display: flex; flex-direction: column; justify-content: center; gap: 15px;">
             <h3 style="margin:0; color:#bdc3c7; font-size: 1.2em; text-transform: uppercase; letter-spacing: 1px;">AI Probability</h3>
-            <div style="font-size: 6em; color: #ff5252; font-weight: bold; margin: 20px 0; text-shadow: 0 0 20px rgba(255, 82, 82, 0.3);">
+            <div style="font-size: 5em; color: #ff5252; font-weight: bold; margin: 20px 0; text-shadow: 0 0 20px rgba(255, 82, 82, 0.3);">
                 {data.get('ai_score', 0)}%
             </div>
-            <p style="color: #7f8c8d; font-size: 0.9em;">Highlights indicate likely AI-generated text.</p>
+            <button onclick="window.print()" style="background:#444; color:white; border:none; padding:12px 20px; cursor:pointer; border-radius:4px; font-size:0.9em; font-weight:bold;">
+                🖨️ Export Report
+            </button>
         </div>
-    </div>
-    """
+    </div>"""
     
-    print("✅ AI DETECTION: Returning Dark Mode HTML")
+    print("✅ AI DETECTION: Returning vibrant highlights with export")
     return jsonify({'success': True, 'html': html_result})
 
 # --- VIEW REPORT ROUTE (FOR ACCESSING SAVED REPORTS) ---
@@ -1745,7 +1803,7 @@ def view_report(report_id):
             for seg in segments:
                 bg = "transparent"
                 if seg.get('is_ai'):
-                    bg = "rgba(231, 76, 60, 0.4)" if seg.get('confidence', 0) > 75 else "rgba(241, 196, 15, 0.3)"
+                    bg = "rgba(255, 60, 60, 0.3)" if seg.get('confidence', 0) > 75 else "rgba(255, 200, 0, 0.25)"
                 content_html += f'<span style="background-color:{bg}; border-radius:3px; padding:2px 0;">{seg.get("text", "")}</span> '
         
         content = f"""
@@ -1763,28 +1821,33 @@ def view_report(report_id):
         </div>
         """
     else:  # plagiarism
-        # Regenerate plagiarism HTML
+        # Regenerate plagiarism HTML with color coding
         score = data.get('score', 0)
-        color = '#ff5252' if score > 20 else '#4caf50'
+        gauge_color = '#ff5252' if score > 20 else '#4caf50'
+        
+        # Color palette
+        colors = ['#FF007F', '#00E5FF', '#76FF03', '#FFD600', '#D500F9']
+        source_colors = {}
+        for idx, s in enumerate(data.get('sources', [])):
+            source_colors[s.get('id')] = colors[idx % len(colors)]
         
         sources_html = ''
         for s in data.get('sources', []):
+            color = source_colors.get(s.get('id'), '#ccc')
             url = s.get('url', '#')
+            if url and url != '#' and not url.startswith('http'):
+                url = 'https://' + url
             domain = s.get('domain', 'Unknown')
-            matched_text = s.get('matched_text', '')[:90]
             similarity = s.get('similarity', 0)
             
             sources_html += f'''
-            <div style="border-bottom: 1px solid #333; padding: 15px 0; display:flex; justify-content:space-between; align-items:center;">
-                <div style="max-width: 75%;">
-                    <a href="{url}" target="_blank" style="color:#64b5f6; font-weight:bold; text-decoration:none; font-size:1.1em;">
+            <div style="border-left: 4px solid {color}; background: #252526; margin-bottom: 10px; padding: 10px; border-radius: 4px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.05em;">
                         {domain} 🔗
                     </a>
-                    <p style="margin:5px 0 0; color:#9e9e9e; font-size:0.9em;">"{matched_text}..."</p>
+                    <span style="color:white; font-weight:bold;">{similarity}%</span>
                 </div>
-                <span style="background:{'rgba(231, 76, 60, 0.2)' if similarity > 20 else 'rgba(46, 204, 113, 0.2)'}; color:{'#ff8a80' if similarity > 20 else '#a5d6a7'}; padding:5px 12px; border-radius:20px; font-weight:bold;">
-                    {similarity}%
-                </span>
             </div>'''
         
         if not sources_html:
@@ -1792,12 +1855,12 @@ def view_report(report_id):
         
         content = f"""
         <div style="display: flex; gap: 20px; margin-top: 20px; font-family: sans-serif;">
-            <div style="flex: 2; background: #1e1e1e; padding: 25px; border-radius: 12px; border: 1px solid #333;">
-                <h3 style="color: #e0e0e0; border-bottom: 1px solid #333; padding-bottom: 15px; margin-top:0;">🔍 Detected Sources</h3>
+            <div style="flex: 1; background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333;">
+                <h3 style="color: #e0e0e0; margin-top:0;">🎨 Detected Sources</h3>
                 {sources_html}
             </div>
             <div style="flex: 1; text-align: center; background: #1e1e1e; padding: 30px; border-radius: 12px; border: 1px solid #333; height: fit-content;">
-                <div style="width:160px; height:160px; border-radius:50%; border:15px solid {color}; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow: 0 0 20px {color}40;">
+                <div style="width:160px; height:160px; border-radius:50%; border:15px solid {gauge_color}; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow: 0 0 20px {gauge_color}40;">
                     <h1 style="font-size:3.5em; margin:0; color: #e0e0e0;">{score}%</h1>
                 </div>
                 <h3 style="color:#b0bec5; margin-top:25px;">Plagiarism Risk</h3>
