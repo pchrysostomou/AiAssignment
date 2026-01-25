@@ -1798,14 +1798,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# NEW: DYNAMIC PDF EXPORT ENDPOINT WITH "SEARCH & REPLACE" STRATEGY
+# NEW: DYNAMIC PDF EXPORT ENDPOINT WITH "GLOBAL TINT" FALLBACK
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR - "SEARCH & REPLACE" STRATEGY
+    UNIFIED DYNAMIC PDF GENERATOR WITH "GLOBAL TINT" FALLBACK
     Generates PDF on-the-fly with visual highlights for AI Detector and Plagiarism tools.
     Uses robust string replacement to wrap segments in highlight tags within the master text.
+    FALLBACK: If segment matching fails (highlight_count == 0) but AI score > 1%, applies global tint.
     GUARANTEES: Complete content rendering - no truncation.
     No disk storage - streams directly to user.
     """
@@ -1828,7 +1829,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) WITH GLOBAL TINT FALLBACK ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1845,60 +1846,81 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- ROBUST "SEARCH & REPLACE" PDF RENDERER ---
+            # --- ROBUST HIGHLIGHTING WITH GLOBAL FALLBACK ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
-            # 1. Retrieve Data
+            # 1. Prepare Data
             full_text = data.get('input_text', '')
             segments = data.get('segments', [])
-
-            # 2. Fail-Safe: If full_text is missing (old records), reconstruct it
+            
+            # Fail-Safe: If full_text is missing, reconstruct it
             if not full_text and segments:
                 full_text = " ".join([s.get('text', '') for s in segments])
             
             if not full_text:
                 story.append(Paragraph("<i>Error: No text content found in report data.</i>", styles['Italic']))
             else:
-                # 3. Apply Highlights using Replace (The "Highlighter" Method)
-                # We work on a copy to avoid messing up loop logic
                 formatted_text = full_text
+                highlight_count = 0
                 
-                # Sort segments by length (longest first) to prevent partial replacement overlap issues
-                segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
-
-                for seg in segments:
-                    original_segment = seg.get('text', '')
-                    score_seg = seg.get('confidence', 0)
+                # 2. Attempt Exact Segment Highlighting
+                if segments:
+                    # Sort by length to match longest phrases first
+                    segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
                     
-                    if not original_segment: 
-                        continue
+                    for seg in segments:
+                        text_part = seg.get('text', '')
+                        score_seg = seg.get('confidence', 0)
+                        
+                        if not text_part:
+                            continue
+                        
+                        # Color Selection (>1% Sensitivity)
+                        if score_seg > 80:
+                            bg = "#FFCCCC"    # Red
+                        elif score_seg > 40:
+                            bg = "#FFEB99"  # Orange
+                        elif score_seg > 1:
+                            bg = "#FFFFCC"   # Yellow
+                        else:
+                            bg = None
+                        
+                        # Try Replace
+                        if bg and text_part in formatted_text:
+                            # Wrap in font tag
+                            replacement = f'<font backColor="{bg}">{text_part}</font>'
+                            formatted_text = formatted_text.replace(text_part, replacement)
+                            highlight_count += 1
 
-                    # Determine Color
-                    if score_seg > 80: 
-                        bg_color = "#FFCCCC"    # Red
-                    elif score_seg > 40: 
-                        bg_color = "#FFEB99"  # Orange
-                    elif score_seg > 1: 
-                        bg_color = "#FFFFCC"   # Yellow
-                    else: 
-                        bg_color = None
+                # 3. FALLBACK: Global Tint Check
+                # If we failed to map specific segments BUT the overall score indicates AI
+                overall_score = data.get('ai_score', 0)
+                global_tint_color = None
+                
+                if highlight_count == 0 and overall_score > 1:
+                    if overall_score > 80:
+                        global_tint_color = "#FFCCCC"
+                    elif overall_score > 40:
+                        global_tint_color = "#FFEB99"
+                    else:
+                        global_tint_color = "#FFFFCC"
+                    
+                    story.append(Paragraph(f"<i>(Note: Exact segment mapping failed due to text formatting. Applying Global Tint based on {overall_score}% AI Score.)</i>", styles['Italic']))
+                    story.append(Spacer(1, 10))
 
-                    if bg_color:
-                        # We replace the text with the highlighted version
-                        highlighted_segment = f'<font backColor="{bg_color}">{original_segment}</font>'
-                        formatted_text = formatted_text.replace(original_segment, highlighted_segment)
-
-                # 4. Render the Final Text (Split by paragraphs for ReportLab)
-                # Use split('\n') to maintain original paragraph structure
+                # 4. Final Render
                 for paragraph in formatted_text.split('\n'):
                     if paragraph.strip():
-                        try:
+                        if global_tint_color:
+                            # Apply Global Tint style to the whole paragraph
+                            style = ParagraphStyle('GlobalTint', parent=styles['Normal'], backColor=global_tint_color)
+                            story.append(Paragraph(paragraph, style))
+                        else:
+                            # Render with inline highlights (if any succeeded)
                             story.append(Paragraph(paragraph, styles['Normal']))
-                            story.append(Spacer(1, 8))
-                        except:
-                            # Fallback for very weird characters
-                            story.append(Paragraph(paragraph, styles['Normal']))
+                        
+                        story.append(Spacer(1, 8))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
