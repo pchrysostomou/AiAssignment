@@ -1798,15 +1798,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# UI FIX: PRECISION HIGHLIGHTING (RED SEGMENTS ONLY - NO GLOBAL TINT)
+# PDF FIX: REGEX FLEXIBLE MATCHING FOR HIGHLIGHTS
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR - PRECISION HIGHLIGHTING ONLY
-    User Requirement: ONLY highlight detected segments in RED. No global tint fallback.
-    Even if AI score is 24%, only mark the specific sentences that contributed to that score.
-    Rest of text remains white/black (normal).
+    UNIFIED DYNAMIC PDF GENERATOR - REGEX FLEXIBLE MATCHING
+    Uses regex patterns with \s+ to match text even when whitespace differs
+    (newlines, tabs, multiple spaces) between source and AI-detected segments.
+    Guarantees higher highlight success rate for high AI scores.
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1827,7 +1827,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) - PRECISION HIGHLIGHTING ONLY ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) - REGEX ROBUST HIGHLIGHTING ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1844,7 +1844,7 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- PRECISION HIGHLIGHTING (No Global Tint) ---
+            # --- REGEX ROBUST HIGHLIGHTING ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
@@ -1861,41 +1861,46 @@ def export_pdf_dynamic(report_id):
             else:
                 formatted_text = full_text
                 
-                # 2. Apply Segment Highlights (RED ONLY)
                 if segments:
-                    # Sort longest to shortest to avoid partial replacement issues
+                    # Sort longest to shortest
                     segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
                     
                     for seg in segments:
-                        text_part = seg.get('text', '').strip()  # Remove surrounding whitespace
-                        confidence = seg.get('confidence', 0)
-                        
+                        text_part = seg.get('text', '').strip()
                         if not text_part:
                             continue
                         
-                        # USER REQUIREMENT: IF DETECTED, MAKE IT RED.
-                        # Regardless of score magnitude, if it's in the list, highlight it.
-                        bg_color = "#FFCCCC"  # Light Red (MistyRose)
+                        # USER REQUIREMENT: FORCE RED FOR ANY DETECTION
+                        bg_color = "#FFCCCC"
 
-                        # Execute Replace
-                        # We try to match the stripped segment in the text
-                        if text_part in formatted_text:
-                            replacement = f'<font backColor="{bg_color}">{text_part}</font>'
-                            formatted_text = formatted_text.replace(text_part, replacement)
-                
-                # 3. Final Render (NO FALLBACK TINT)
-                # If no segments matched, text remains white/black.
-                
+                        # CREATE FLEXIBLE PATTERN
+                        # 1. Escape special regex chars in the text
+                        # 2. Replace spaces with \s+ to match newlines/tabs/multiple spaces
+                        pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
+                        
+                        try:
+                            # Compile regex (Ignore Case for better matching)
+                            pattern = re.compile(pattern_str, re.IGNORECASE)
+                            
+                            # SUBSTITUTE WITH HIGHLIGHT
+                            # We use lambda m: ... m.group(0) to preserve the original text's casing/spacing
+                            formatted_text = pattern.sub(
+                                lambda m: f'<font backColor="{bg_color}">{m.group(0)}</font>', 
+                                formatted_text
+                            )
+                        except Exception as e:
+                            # Fallback if regex fails (rare)
+                            pass
+
+                # 3. Final Render
                 # Split by newlines to preserve paragraphs
                 for paragraph in formatted_text.split('\n'):
                     if paragraph.strip():
                         try:
-                            # Render with inline highlights
                             story.append(Paragraph(paragraph, styles['Normal']))
                             story.append(Spacer(1, 8))
                         except:
-                            # Fallback for problematic characters
-                            story.append(Paragraph(paragraph, styles['Normal']))
+                            pass
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
@@ -1932,7 +1937,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- ROBUST "SEARCH & REPLACE" PDF RENDERER ---
+            # --- REGEX ROBUST HIGHLIGHTING FOR PLAGIARISM ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
@@ -1942,7 +1947,7 @@ def export_pdf_dynamic(report_id):
             if not full_text:
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
             else:
-                # Apply highlights using replace
+                # Apply highlights using regex
                 formatted_text = full_text
                 
                 # Sort matches by length (longest first)
@@ -1972,8 +1977,15 @@ def export_pdf_dynamic(report_id):
                             bg_color = "#FFFFCC"  # Yellow
                             prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
                         
-                        highlighted_segment = f'<font backColor="{bg_color}">{prefix}{segment}</font>'
-                        formatted_text = formatted_text.replace(segment, highlighted_segment)
+                        # Create flexible regex pattern
+                        pattern_str = re.escape(segment).replace(r'\ ', r'\s+')
+                        
+                        try:
+                            pattern = re.compile(pattern_str, re.IGNORECASE)
+                            highlighted_segment = f'<font backColor="{bg_color}">{prefix}\\g<0></font>'
+                            formatted_text = pattern.sub(highlighted_segment, formatted_text)
+                        except:
+                            pass
                 
                 # Render the final text
                 for paragraph in formatted_text.split('\n'):
