@@ -383,35 +383,28 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
-# --- JSON CLEANER HELPER (Prevents Crashes) ---
+# --- FORCE JSON CLEANER (OVERWRITE) ---
 def clean_and_parse_json(response_text):
-    """
-    Extracts pure JSON from AI response, removing Markdown (```json) and preambles.
-    Fixes 'Unexpected token' errors.
-    """
+    """Sanitizes AI response to extract pure JSON. Prevents 'Unexpected token' crashes."""
     try:
-        # If it's already a dict, return it
-        if isinstance(response_text, dict):
+        if isinstance(response_text, dict): 
             return response_text
-            
-        # Remove Markdown code blocks
+        
+        # Remove markdown fences
         text = re.sub(r'```json\s*', '', response_text)
         text = re.sub(r'```', '', text)
+        text = text.strip()
         
-        # Find the first '{' and last '}'
-        start = text.find('{')
-        end = text.rfind('}') + 1
+        # Extract JSON object
+        start, end = text.find('{'), text.rfind('}') + 1
+        if start != -1 and end != 0: 
+            return json.loads(text[start:end])
         
-        if start != -1 and end != 0:
-            json_str = text[start:end]
-            return json.loads(json_str)
-        else:
-            # Fallback: try raw parse
-            return json.loads(text)
+        return json.loads(text)
     except Exception as e:
-        print(f"❌ JSON Parse Error: {str(e)}\nInput: {response_text[:100]}...")
-        # Return a safe fallback structure
-        return {"error": "Failed to parse AI response", "ai_probability": 0, "ai_score": 0, "overall_suspicion": 0, "score": 0, "matches": [], "sources": [], "segments": []}
+        print(f"JSON Error: {e}")
+        # Return safe fallback structure
+        return {"score": 0, "sources": [], "ai_score": 0, "segments": []}
 
 # --- TOKEN TRUNCATION HELPER ---
 def truncate_text(text, max_tokens=10000):
@@ -591,167 +584,6 @@ class HeartbeatThread(threading.Thread):
                     self.callback()
                 except:
                     pass  # Ignore errors if stream is closed
-
-# TOOL A: The Detective - UPGRADED SCRIBBR-STYLE PLAGIARISM DETECTION
-def plagiarism_hunter_gemini(text):
-    """Step 1: Gemini hunts for sources - SCRIBBR-COMPATIBLE FORMAT"""
-    # Truncate to safe limit
-    safe_text = truncate_text(text, max_tokens=4000)
-    
-    prompt = f"""Analyze this text for plagiarism. 
-TEXT: {safe_text}
-
-Return STRICT JSON ONLY. No markdown. No intro text.
-Format:
-{{
-    "score": 0-100,
-    "sources": [
-        {{"url": "https://...", "domain": "wikipedia.org", "similarity": 45, "matched_text": "..."}}
-    ]
-}}"""
-    
-    try:
-        raw = call_gemini(prompt)
-        return clean_and_parse_json(raw)  # Use the cleaner!
-    except Exception as e:
-        print(f"❌ Plagiarism Hunter Error: {str(e)}")
-        return {"score": 0, "sources": [], "error": str(e)}
-
-def plagiarism_analyst_gpt(student_text, hunter_findings):
-    """Step 2: GPT-4o analyzes similarity and paraphrasing - DEPRECATED (kept for PDF generation)"""
-    # Truncate student_text to prevent token overflow
-    truncated_student_text = truncate_text(student_text, max_tokens=8000)
-    
-    # Convert hunter_findings dict to JSON string if needed
-    if isinstance(hunter_findings, dict):
-        hunter_json_str = json.dumps(hunter_findings)
-    else:
-        hunter_json_str = str(hunter_findings)
-    
-    truncated_hunter_findings = truncate_text(hunter_json_str, max_tokens=5000)
-    
-    prompt = f"""You are The Analyst, an expert in detecting plagiarism and paraphrasing.
-
-STUDENT TEXT:
-{truncated_student_text}
-
-SOURCES FOUND BY HUNTER:
-{truncated_hunter_findings}
-
-TASKS:
-1. Compare student text with each source
-2. Detect direct copying vs paraphrasing
-3. Assign "Suspicion Score" (0-100) for each match
-4. Identify specific sentences that are problematic
-
-Return JSON:
-{{
-    "overall_suspicion": 0-100,
-    "analysis": [
-        {{
-            "student_sentence": "...",
-            "source_sentence": "...",
-            "suspicion_score": 0-100,
-            "type": "DIRECT_COPY/PARAPHRASED/SIMILAR"
-        }}
-    ]
-}}"""
-    
-    try:
-        result = call_gpt4(prompt, max_input_tokens=14000)
-        return result
-    except Exception as e:
-        return json.dumps({"overall_suspicion": 0, "analysis": [], "error": str(e)})
-
-def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id):
-    """Step 3: Claude generates PDF report with highlighted text"""
-    filename = f"plagiarism_report_{user_id}_{int(time.time())}.pdf"
-    filepath = os.path.join(app.config['REPORTS_FOLDER'], filename)
-    
-    doc = SimpleDocTemplate(filepath, pagesize=letter)
-    styles = getSampleStyleSheet()
-    story = []
-    
-    # Title
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], 
-                                 fontSize=24, textColor=colors.HexColor('#b537f2'))
-    story.append(Paragraph("🔍 The Detective - Plagiarism Report", title_style))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Metadata
-    story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    # Parse findings
-    try:
-        # Handle both dict and JSON string formats
-        if isinstance(hunter_data, dict):
-            hunter_json = hunter_data
-        else:
-            hunter_json = json.loads(hunter_data)
-            
-        if isinstance(analyst_data, dict):
-            analyst_json = analyst_data
-        else:
-            analyst_json = json.loads(analyst_data)
-        
-        overall_score = analyst_json.get('overall_suspicion', hunter_json.get('score', 0))
-        verdict_color = colors.red if overall_score > 30 else colors.green
-        
-        verdict_style = ParagraphStyle('Verdict', parent=styles['Heading2'], textColor=verdict_color)
-        story.append(Paragraph(f"Overall Suspicion: {overall_score}%", verdict_style))
-        story.append(Spacer(1, 0.2*inch))
-        
-        # Suspicious passages
-        story.append(Paragraph("<b>Suspicious Passages:</b>", styles['Heading3']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        for i, analysis in enumerate(analyst_json.get('analysis', [])[:10], 1):
-            student_sent = analysis.get('student_sentence', 'N/A')
-            suspicion = analysis.get('suspicion_score', 0)
-            match_type = analysis.get('type', 'UNKNOWN')
-            
-            if suspicion > 50:
-                highlight_style = ParagraphStyle('Highlight', parent=styles['Normal'],
-                                                backColor=colors.yellow)
-                story.append(Paragraph(f"<b>Match {i} ({suspicion}% - {match_type}):</b>", styles['Normal']))
-                story.append(Paragraph(f'"{student_sent}"', highlight_style))
-            else:
-                story.append(Paragraph(f"<b>Match {i} ({suspicion}% - {match_type}):</b>", styles['Normal']))
-                story.append(Paragraph(f'"{student_sent}"', styles['Italic']))
-            
-            story.append(Spacer(1, 0.15*inch))
-        
-        # Reference Status Table
-        story.append(PageBreak())
-        story.append(Paragraph("<b>Reference Status:</b>", styles['Heading3']))
-        story.append(Spacer(1, 0.1*inch))
-        
-        table_data = [['Source URL', 'Status']]
-        for source in hunter_json.get('sources', [])[:15]:
-            url = source.get('url', 'N/A')
-            is_live = check_url_status(url)
-            status = '✓ Live' if is_live else '✗ Broken'
-            table_data.append([url[:60] + '...' if len(url) > 60 else url, status])
-        
-        table = Table(table_data, colWidths=[4*inch, 1.5*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ]))
-        story.append(table)
-        
-    except Exception as e:
-        story.append(Paragraph(f"Error parsing results: {str(e)}", styles['Normal']))
-    
-    doc.build(story)
-    return filename
 
 # TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH ENHANCED RATCHET + FLOOR MECHANISM
 def generate_essay_stream(instructions, word_count):
@@ -1208,32 +1040,6 @@ Revise the essay following the STRICT RULES of the current Mode above.
         # Stop heartbeat thread
         stop_heartbeat.set()
         heartbeat_thread.join(timeout=1)
-
-# TOOL C: The Oracle - UPGRADED TURNITIN-STYLE AI DETECTION
-def check_ai_content(text):
-    """Use GPT-4 to detect AI-generated content - TURNITIN-STYLE SENTENCE HIGHLIGHTING"""
-    # Truncate text to safe limits
-    safe_text = truncate_text(text, max_tokens=2000)
-    
-    prompt = f"""Analyze this text for AI generation. 
-Break it down sentence by sentence.
-TEXT: {safe_text}
-
-Return STRICT JSON ONLY:
-{{
-    "ai_score": 0-100,
-    "segments": [
-        {{"text": "sentence 1...", "is_ai": true/false, "confidence": 0-100}},
-        {{"text": "sentence 2...", "is_ai": true/false, "confidence": 0-100}}
-    ]
-}}"""
-    
-    try:
-        raw = call_gpt4(prompt, max_input_tokens=12000)
-        return clean_and_parse_json(raw)  # Use the cleaner!
-    except Exception as e:
-        print(f"❌ AI Detection Error: {str(e)}")
-        return {"ai_score": 0, "segments": [], "error": str(e)}
 
 # TOOL D: The Grader - 3-Round Consensus Debate
 def grade_assignment(brief_text, essay_text):
@@ -1727,151 +1533,109 @@ def generate_essay():
         }
     )
 
+# --- REPLACE PLAGIARISM ROUTE (SCRIBBR STYLE - NO PDF) ---
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """UPGRADED: Scribbr-Style Plagiarism Detection with HTML Results"""
+    """SCRIBBR-STYLE PLAGIARISM DETECTION - HTML ONLY, NO PDF"""
     text = request.form.get('text')
+    if not text: 
+        return jsonify({'error': 'No text'}), 400
     
-    if not text:
-        return jsonify({'error': 'Text required'}), 400
+    print("🔍 PLAGIARISM CHECK: Starting Scribbr-style detection...")
+    
+    # 1. Get Data (using cleaner)
+    prompt = f"""Analyze for plagiarism. TEXT: {text[:4000]}...
+    Return STRICT JSON: {{"score": 0-100, "sources": [{{"url": "...", "domain": "...", "similarity": 0-100, "matched_text": "..."}}]}}"""
     
     try:
-        # 1. Get Data from upgraded hunter
-        findings = plagiarism_hunter_gemini(text)
-        
-        # 2. Render Scribbr-Style HTML directly
-        score = findings.get('score', 0)
-        sources = findings.get('sources', [])
-        
-        # Determine color based on score
-        circle_color = 'red' if score > 20 else '#4caf50'
-        
-        # Build sources list HTML
-        sources_html = ''
-        for s in sources[:10]:  # Limit to 10 sources
-            url = s.get('url', '#')
-            domain = s.get('domain', 'Unknown Source')
-            similarity = s.get('similarity', 0)
-            matched_text = s.get('matched_text', '')[:60]
-            
-            sources_html += f'''
-            <li style="border-bottom: 1px solid #eee; padding: 10px 0; display: flex; justify-content: space-between;">
-                <div>
-                    <a href="{url}" target="_blank" style="color: #0066cc; font-weight: bold; text-decoration: none;">{domain}</a>
-                    <p style="margin: 5px 0 0; font-size: 0.9em; color: #666;">"{matched_text}..."</p>
-                </div>
-                <span style="background: #ffebee; color: #c62828; padding: 2px 10px; border-radius: 15px; font-weight: bold; height: fit-content;">{similarity}% Match</span>
-            </li>
-            '''
-        
-        if not sources_html:
-            sources_html = '<li style="padding: 20px; text-align: center; color: #666;">No suspicious sources detected.</li>'
-        
-        html_result = f"""
-        <div style="display: flex; gap: 20px; margin-top: 20px;">
-            <div style="width: 250px; text-align: center; padding: 20px; background: #fff; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                <div style="width: 150px; height: 150px; border-radius: 50%; border: 10px solid {circle_color}; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-                    <h1 style="font-size: 3em; margin:0; color: #333;">{score}%</h1>
-                </div>
-                <h3 style="margin-top: 15px; color: #666;">Plagiarism Risk</h3>
-            </div>
-            
-            <div style="flex: 1; background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                <h3>🔍 Detected Sources</h3>
-                <ul style="list-style: none; padding: 0;">
-                    {sources_html}
-                </ul>
-            </div>
-        </div>
-        """
-        
-        # 3. Still generate PDF for download (using old analyst for compatibility)
-        analyst_findings = plagiarism_analyst_gpt(text, findings)
-        pdf_filename = plagiarism_reporter_claude(text, findings, analyst_findings, current_user.id)
-        
-        report = Report(
-            user_id=current_user.id,
-            tool_type='plagiarism',
-            title='Plagiarism Check',
-            result_data=json.dumps(findings),
-            file_path=pdf_filename
-        )
-        db.session.add(report)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'html': html_result,
-            'report_id': report.id,
-            'pdf_url': f'/download-report/{report.id}'
-        })
+        raw_response = call_gemini(prompt)
+        findings = clean_and_parse_json(raw_response)
+        print(f"✅ Gemini returned findings: {findings}")
     except Exception as e:
-        print(f"❌ Plagiarism Check Error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"❌ Gemini error: {str(e)}")
+        findings = {"score": 0, "sources": []}
 
+    # 2. Render HTML (Scribbr Style)
+    score = findings.get('score', 0)
+    color = '#f44336' if score > 20 else '#4caf50'
+    
+    sources_list = ""
+    for s in findings.get('sources', [])[:10]:
+        sources_list += f'''
+        <div style="display:flex; justify-content:space-between; padding: 12px 0; border-bottom: 1px solid #eee;">
+            <a href="{s.get('url', '#')}" target="_blank" style="color:#1a73e8; font-weight:bold; text-decoration:none;">{s.get('domain', 'Unknown')}</a>
+            <span style="background:{'#ffebee' if s.get('similarity', 0) > 20 else '#e8f5e9'}; color:{'#c62828' if s.get('similarity', 0) > 20 else '#2e7d32'}; padding:4px 12px; border-radius:12px; font-weight:bold;">{s.get('similarity', 0)}% Match</span>
+        </div>'''
+    
+    if not sources_list:
+        sources_list = '<p style="padding:20px; text-align:center; color:#999;">No suspicious sources detected.</p>'
+    
+    html = f"""
+    <div style="display: flex; gap: 30px; margin-top: 20px; font-family: sans-serif;">
+        <div style="flex: 2; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <h3 style="border-bottom: 2px solid #f0f0f0; padding-bottom: 10px;">🔍 Detected Sources</h3>
+            {sources_list}
+        </div>
+        <div style="flex: 1; text-align: center; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); height: fit-content;">
+            <div style="width:140px; height:140px; border-radius:50%; border:12px solid {color}; display:flex; align-items:center; justify-content:center; margin:0 auto;">
+                <h1 style="font-size:3.5em; margin:0; color:#333;">{score}%</h1>
+            </div>
+            <h3 style="color:#666; margin-top:20px;">Plagiarism Risk</h3>
+        </div>
+    </div>"""
+    
+    print("✅ PLAGIARISM CHECK: Returning Scribbr-style HTML")
+    return jsonify({'success': True, 'html': html})
+
+# --- REPLACE AI DETECTOR ROUTE (TURNITIN STYLE) ---
 @app.route('/check-ai', methods=['POST'])
 @login_required
 def check_ai():
-    """UPGRADED: Turnitin-Style AI Detection with Highlighted Text"""
+    """TURNITIN-STYLE AI DETECTION - HTML WITH SENTENCE HIGHLIGHTING"""
     text = request.form.get('text')
-    
     if not text:
-        return jsonify({'error': 'Text required'}), 400
+        return jsonify({'error': 'No text'}), 400
+    
+    print("🤖 AI DETECTION: Starting Turnitin-style analysis...")
+    
+    # 1. Get Data (Sentence-level)
+    prompt = f"""Analyze for AI. SENTENCE BY SENTENCE. TEXT: {text[:2000]}
+    Return JSON: {{"ai_score": 0-100, "segments": [{{"text": "sentence...", "is_ai": true, "confidence": 90}}]}}"""
     
     try:
-        data = check_ai_content(text)
-        
-        # Generate Turnitin-style HTML
-        highlighted_text = ""
-        for seg in data.get('segments', []):
-            bg_color = "transparent"
-            confidence = seg.get('confidence', 0)
-            
-            if seg.get('is_ai') and confidence > 70:
-                bg_color = "#ffcccc"  # Red highlight for AI
-            elif seg.get('is_ai'):
-                bg_color = "#fff4cc"  # Yellow for suspicious
-                 
-            seg_text = seg.get('text', '')
-            highlighted_text += f'<span style="background-color: {bg_color}; padding: 2px 0; border-radius: 2px;" title="AI Confidence: {confidence}%">{seg_text}</span> '
-
-        ai_score = data.get('ai_score', 0)
-        
-        html_result = f"""
-        <div style="display: flex; gap: 20px;">
-            <div style="flex: 2; background: white; padding: 25px; border-radius: 8px; line-height: 1.6; border: 1px solid #ddd; height: 500px; overflow-y: scroll;">
-                {highlighted_text if highlighted_text else '<p style="color: #666;">No text segments to analyze.</p>'}
-            </div>
-            
-            <div style="flex: 1; background: #333; color: white; padding: 20px; border-radius: 8px;">
-                <h2 style="margin-top: 0;">AI Probability</h2>
-                <div style="font-size: 4em; color: #ff6b6b; font-weight: bold; text-align: center; margin: 20px 0;">
-                    {ai_score}%
-                </div>
-                <p>Highlights indicate text likely generated by AI models like GPT-4 or Claude.</p>
-            </div>
-        </div>
-        """
-        
-        report = Report(
-            user_id=current_user.id,
-            tool_type='ai_check',
-            title='AI Detection',
-            result_data=json.dumps(data)
-        )
-        db.session.add(report)
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'html': html_result,
-            'report_id': report.id,
-            'analysis': json.dumps(data)
-        })
+        raw_response = call_gpt4(prompt)
+        data = clean_and_parse_json(raw_response)
+        print(f"✅ GPT-4 returned data: {data}")
     except Exception as e:
-        print(f"❌ AI Detection Error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        print(f"❌ GPT-4 error: {str(e)}")
+        data = {"ai_score": 0, "segments": []}
+    
+    # 2. Render HTML (Turnitin Style Highlighting)
+    content_html = ""
+    for seg in data.get('segments', []):
+        bg = "transparent"
+        if seg.get('is_ai'):
+            bg = "#ffcccc" if seg.get('confidence', 0) > 75 else "#fff4cc"
+        content_html += f'<span style="background:{bg}; padding:2px 0; margin-right:3px;">{seg.get("text", "")}</span>'
+
+    if not content_html:
+        content_html = '<p style="color:#999;">No text segments to analyze.</p>'
+
+    html = f"""
+    <div style="display: flex; gap: 20px; height: 500px;">
+        <div style="flex: 3; background: white; padding: 30px; border: 1px solid #ddd; overflow-y: scroll; line-height: 1.8; font-family: 'Georgia', serif; font-size: 1.1em; color: #333;">
+            {content_html}
+        </div>
+        <div style="flex: 1; background: #2c3e50; color: white; padding: 25px; border-radius: 8px; text-align: center;">
+            <h3 style="margin-top:0; color:#ecf0f1;">AI Probability</h3>
+            <div style="font-size: 5em; color: #e74c3c; font-weight: bold; margin: 20px 0;">{data.get('ai_score', 0)}%</div>
+            <p style="font-size: 0.9em; opacity: 0.8;">Highlights indicate suspected AI generation.</p>
+        </div>
+    </div>"""
+    
+    print("✅ AI DETECTION: Returning Turnitin-style HTML")
+    return jsonify({'success': True, 'html': html})
 
 @app.route('/grade-assignment', methods=['POST'])
 @login_required
