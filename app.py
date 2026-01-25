@@ -1803,8 +1803,9 @@ def check_ai():
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR
+    UNIFIED DYNAMIC PDF GENERATOR WITH REMAINDER HANDLING
     Generates PDF on-the-fly with visual highlights for AI Detector and Plagiarism tools.
+    CRITICAL FIX: Appends remaining text that wasn't analyzed by AI (prevents truncation).
     No disk storage - streams directly to user.
     """
     report = Report.query.get_or_404(report_id)
@@ -1843,76 +1844,80 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- PDF CONTENT RENDER LOGIC (MERGED & IMPROVED) ---
+            # --- ROBUST PDF RENDERER (With Remainder Handling) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
-            # Get data
             segments = data.get('segments', [])
             full_text = data.get('input_text', '')
+            
+            # Track what has been printed to identify the remainder
+            printed_content_accumulator = ""
 
-            # Helper to render text with proper spacing (Fixes "Wall of Text")
+            # Helper for text formatting
             def add_formatted_text(text_content, background_color=None):
-                # Split by newlines to preserve paragraphs
                 paragraphs = text_content.split('\n')
                 for p in paragraphs:
-                    if p.strip():  # Skip empty lines
+                    if p.strip():
                         if background_color:
-                            # Highlight the whole paragraph
                             style = ParagraphStyle('Highlight', parent=styles['Normal'], backColor=background_color)
                             story.append(Paragraph(p, style))
                         else:
                             story.append(Paragraph(p, styles['Normal']))
-                        # ADD SPACING BETWEEN PARAGRAPHS
                         story.append(Spacer(1, 8))
 
+            # 1. RENDER ANALYZED SEGMENTS (Highlights)
             if segments:
-                # Reconstruct text with segments using Gradient Sensitivity
                 for seg in segments:
                     text_part = seg.get('text', '')
                     score_seg = seg.get('confidence', 0)
+                    printed_content_accumulator += text_part  # Keep track
                     
-                    # HYPER-SENSITIVE THRESHOLDS (>1%)
+                    # HYPER-SENSITIVE HIGHLIGHTING
                     if score_seg > 80:
-                        # HIGH PROBABILITY -> RED (MistyRose)
-                        bg_color = colors.Color(1, 0.8, 0.8)  # #FFCCCC
+                        bg_color = colors.Color(1, 0.8, 0.8)  # Red
                         story.append(Paragraph(text_part, ParagraphStyle('HighAI', parent=styles['Normal'], backColor=bg_color)))
-                    
                     elif score_seg > 40:
-                        # MEDIUM PROBABILITY -> ORANGE/GOLD
-                        bg_color = colors.Color(1, 0.92, 0.6)  # #FFEB99
+                        bg_color = colors.Color(1, 0.92, 0.6)  # Orange
                         story.append(Paragraph(text_part, ParagraphStyle('MedAI', parent=styles['Normal'], backColor=bg_color)))
-                        
                     elif score_seg > 1:
-                        # LOW PROBABILITY (2-40%) -> LIGHT YELLOW
-                        # User wants to see EVERYTHING
-                        bg_color = colors.Color(1, 1, 0.8)  # #FFFFCC
+                        bg_color = colors.Color(1, 1, 0.8)  # Yellow
                         story.append(Paragraph(text_part, ParagraphStyle('LowAI', parent=styles['Normal'], backColor=bg_color)))
-                        
                     else:
-                        # 0-1% Score -> No Highlight
                         story.append(Paragraph(text_part, styles['Normal']))
                     
-                    # Small spacer for readability between segments
                     story.append(Spacer(1, 6))
 
-            elif full_text:
-                # FALLBACK: If no segments, tint based on overall score
-                overall_score = data.get('ai_score', 0)
-                bg_color = None
+            # 2. CRITICAL: RENDER THE REMAINDER (The missing pages)
+            # Calculate roughly where the segments ended
+            if full_text and len(full_text) > len(printed_content_accumulator) + 50:
                 
-                if overall_score > 80:
-                    bg_color = colors.Color(1, 0.8, 0.8)  # Red tint
-                    story.append(Paragraph(f"<i>(Note: Segments not detected, but High Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
-                elif overall_score > 40:
-                    bg_color = colors.Color(1, 0.92, 0.6)  # Orange tint
-                    story.append(Paragraph(f"<i>(Note: Segments not detected, but Medium Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
-                elif overall_score > 1:
-                    bg_color = colors.Color(1, 1, 0.8)  # Yellow tint
-                    story.append(Paragraph(f"<i>(Note: Segments not detected, but Low Risk ({overall_score}%). Full tint applied.)</i>", styles['Italic']))
+                # Find the remaining text. 
+                # Note: We use a simple index cut if possible, or string replace.
+                # Since AI might slightly alter text, we'll try to find the last segment's position.
                 
-                add_formatted_text(full_text, bg_color)
-                
+                try:
+                    # Attempt to find the end of the analyzed part
+                    last_segment = segments[-1].get('text', '') if segments else ''
+                    if last_segment:
+                        split_parts = full_text.split(last_segment)
+                        if len(split_parts) > 1:
+                            # The remainder is everything after the last segment
+                            remaining_text = split_parts[-1]
+                            
+                            story.append(Spacer(1, 20))
+                            story.append(Paragraph("<b>--- End of AI Analyzed Section (Continuing Original Text) ---</b>", styles['Italic']))
+                            story.append(Spacer(1, 10))
+                            
+                            add_formatted_text(remaining_text)
+                except Exception as e:
+                    # Fallback: If split fails, just print full text if segments were empty
+                    if not segments:
+                         add_formatted_text(full_text)
+
+            elif not segments and full_text:
+                 # Fallback for no segments at all
+                 add_formatted_text(full_text)
             else:
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
 
