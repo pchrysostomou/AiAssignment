@@ -1710,13 +1710,11 @@ def check_plagiarism():
         db.session.add(report)
         db.session.commit()
         print(f"✅ Report saved to database (ID: {report.id})")
-        report_id = report.id
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
-        report_id = None
     
     print("✅ RESCUE FIX: Returning simplified plagiarism detection")
-    return jsonify({'success': True, 'html': html, 'report_id': report_id})
+    return jsonify({'success': True, 'html': html})
 
 # FIX #2: AI CHECK (Prevent Empty Box + PDF Export + ALWAYS SHOW TEXT)
 @app.route('/check-ai', methods=['POST'])
@@ -1786,13 +1784,11 @@ def check_ai():
         db.session.add(report)
         db.session.commit()
         print(f"✅ Report saved to database (ID: {report.id})")
-        report_id = report.id
     except Exception as e:
         print(f"❌ DB save error: {str(e)}")
-        report_id = None
     
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
-    return jsonify({'success': True, 'html': html, 'report_id': report_id})
+    return jsonify({'success': True, 'html': html})
 
 # NEW: DYNAMIC PDF EXPORT ENDPOINT (FIXES BROKEN EXPORT BUTTONS)
 @app.route('/export-pdf/<int:report_id>')

@@ -338,10 +338,20 @@
             const data = await response.json();
             
             if (data.success && data.html) {
-                // CRITICAL FIX: Inject HTML Dashboard directly
+                // Inject HTML Dashboard
                 const resultBox = document.getElementById('resultBox');
                 resultBox.innerHTML = data.html;
                 resultBox.classList.add('active');
+                
+                // LINK THE PDF BUTTON
+                if (data.report_id) {
+                    const pdfBtn = resultBox.querySelector('button[onclick="exportAIPDF()"]');
+                    if (pdfBtn) {
+                        pdfBtn.onclick = function() {
+                            window.location.href = `/export-pdf/${data.report_id}`;
+                        };
+                    }
+                }
                 
                 console.log('✅ Turnitin-style dashboard rendered successfully');
             } else {
