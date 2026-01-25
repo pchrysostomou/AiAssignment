@@ -68,7 +68,7 @@ def add_security_headers(response):
     response.headers['Content-Security-Policy'] = csp_policy
     
     # Add CORS headers for API routes
-    if request.path.startswith('/api/') or request.path.startswith('/generate-') or request.path.startswith('/create-checkout') or request.path.startswith('/check-'):
+    if request.path.startswith('/api/') or request.path.startswith('/generate-') or request.path.startswith('/create-checkout') or request.path.startswith('/check-') or request.path.startswith('/export-pdf'):
         response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
@@ -1642,8 +1642,8 @@ def check_plagiarism():
     findings = plagiarism_hunter_gemini(text)
     
     # Visuals
-    colors = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
-    source_colors = {s.get('id'): colors[i % len(colors)] for i, s in enumerate(findings.get('sources', []))}
+    colors_list = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
+    source_colors = {s.get('id'): colors_list[i % len(colors_list)] for i, s in enumerate(findings.get('sources', []))}
 
     # Left Panel: Sources
     sources_html = ""
@@ -1790,6 +1790,166 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html})
 
+# NEW: DYNAMIC PDF EXPORT ENDPOINT (FIXES BROKEN EXPORT BUTTONS)
+@app.route('/export-pdf/<int:report_id>')
+@login_required
+def export_pdf_dynamic(report_id):
+    """
+    UNIFIED DYNAMIC PDF GENERATOR
+    Generates PDF on-the-fly with visual highlights for AI Detector and Plagiarism tools.
+    No disk storage - streams directly to user.
+    """
+    report = Report.query.get_or_404(report_id)
+    
+    # Security check
+    if report.user_id != current_user.id:
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    # Setup Buffer and Document
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title
+    title_style = ParagraphStyle('MainTitle', parent=styles['Heading1'], alignment=1, fontSize=18, spaceAfter=20)
+    story.append(Paragraph(f"📄 {report.title} Report", title_style))
+    story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+    story.append(Spacer(1, 20))
+
+    # --- LOGIC FOR AI DETECTOR (The Oracle) ---
+    if report.tool_type == 'ai_check':
+        try:
+            # Parse JSON data
+            data = json.loads(report.result_data) if isinstance(report.result_data, str) else report.result_data
+            score = data.get('ai_score', 0)
+            
+            # Score Display
+            score_color = "red" if score > 50 else "green"
+            score_text = f'<font color="{score_color}" size="16"><b>AI Probability: {score}%</b></font>'
+            story.append(Paragraph(score_text, styles['Normal']))
+            story.append(Spacer(1, 10))
+            
+            breakdown = data.get('breakdown', 'N/A')
+            story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
+            story.append(Spacer(1, 20))
+
+            # Highlighted Text with Color Coding
+            story.append(Paragraph("<b>Analysis (Red = High AI Confidence, Yellow = Medium):</b>", styles['Heading3']))
+            story.append(Spacer(1, 10))
+            
+            segments = data.get('segments', [])
+            if not segments:
+                story.append(Paragraph("No segment analysis available.", styles['Normal']))
+            else:
+                for seg in segments:
+                    is_ai = seg.get('is_ai', False)
+                    confidence = seg.get('confidence', 0)
+                    text_content = seg.get('text', '')
+                    
+                    if is_ai:
+                        if confidence > 75:
+                            # High confidence - Red background
+                            highlight_style = ParagraphStyle('HighAI', parent=styles['Normal'], 
+                                                            backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
+                                                            borderColor=colors.red, borderWidth=1, borderPadding=3)
+                            prefix = f"🔴 <b>HIGH AI ({confidence}%):</b> "
+                        else:
+                            # Medium confidence - Yellow background
+                            highlight_style = ParagraphStyle('MedAI', parent=styles['Normal'],
+                                                            backColor=colors.Color(1, 0.84, 0, alpha=0.2))
+                            prefix = f"🟡 <b>Medium AI ({confidence}%):</b> "
+                        
+                        story.append(Paragraph(prefix + text_content, highlight_style))
+                    else:
+                        # Human-written - Normal style
+                        story.append(Paragraph(f"🟢 {text_content}", styles['Normal']))
+                    
+                    story.append(Spacer(1, 8))
+
+        except Exception as e:
+            story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
+
+    # --- LOGIC FOR PLAGIARISM (The Detective) ---
+    elif report.tool_type == 'plagiarism':
+        try:
+            # Parse JSON data
+            data = json.loads(report.result_data)
+            score = data.get('score', 0)
+            
+            # Score Display
+            score_color = "red" if score > 20 else "green"
+            score_text = f'<font color="{score_color}" size="16"><b>Plagiarism Risk: {score}%</b></font>'
+            story.append(Paragraph(score_text, styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            # Sources List
+            story.append(Paragraph("<b>Detected Sources:</b>", styles['Heading3']))
+            story.append(Spacer(1, 10))
+            
+            sources = data.get('sources', [])
+            if not sources:
+                story.append(Paragraph("No suspicious sources detected.", styles['Normal']))
+            else:
+                for s in sources:
+                    domain = s.get('domain', 'Unknown')
+                    url = s.get('url', '#')
+                    similarity = s.get('similarity', 0)
+                    
+                    source_text = f"• <b>{domain}</b> ({similarity}% match)<br/><i>{url}</i>"
+                    story.append(Paragraph(source_text, styles['Normal']))
+                    story.append(Spacer(1, 8))
+            
+            story.append(Spacer(1, 20))
+            
+            # Matched Segments with Highlights
+            story.append(Paragraph("<b>Matched Text Segments:</b>", styles['Heading3']))
+            story.append(Spacer(1, 10))
+            
+            matches = data.get('matches', [])
+            if not matches:
+                story.append(Paragraph("No specific matches found.", styles['Normal']))
+            else:
+                for match in matches:
+                    segment = match.get('text_segment', '')
+                    source_id = match.get('source_id', 0)
+                    
+                    # Find corresponding source
+                    source = next((s for s in sources if s.get('id') == source_id), None)
+                    if source:
+                        similarity = source.get('similarity', 0)
+                        domain = source.get('domain', 'Unknown')
+                        
+                        if similarity > 50:
+                            # High risk - Red highlight
+                            match_style = ParagraphStyle('HighRisk', parent=styles['Normal'],
+                                                        backColor=colors.Color(1, 0.09, 0.27, alpha=0.3),
+                                                        borderColor=colors.red, borderWidth=1, borderPadding=5)
+                            prefix = f"🔴 <b>HIGH RISK ({similarity}% - {domain}):</b><br/>"
+                        elif similarity > 20:
+                            # Medium risk - Yellow highlight
+                            match_style = ParagraphStyle('MedRisk', parent=styles['Normal'],
+                                                        backColor=colors.Color(1, 0.84, 0, alpha=0.2),
+                                                        borderPadding=3)
+                            prefix = f"🟠 <b>Possible Match ({similarity}% - {domain}):</b><br/>"
+                        else:
+                            match_style = styles['Normal']
+                            prefix = f"🟢 <b>Low Risk ({similarity}% - {domain}):</b><br/>"
+                        
+                        story.append(Paragraph(prefix + segment, match_style))
+                        story.append(Spacer(1, 12))
+
+        except Exception as e:
+            story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
+
+    # Build PDF
+    doc.build(story)
+    buffer.seek(0)
+    
+    return Response(buffer, mimetype='application/pdf', 
+                   headers={'Content-Disposition': f'attachment;filename=report_{report.tool_type}_{report_id}.pdf'})
+
 # --- VIEW REPORT ROUTE (FOR ACCESSING SAVED REPORTS) ---
 @app.route('/view-report/<int:report_id>')
 @login_required
@@ -1839,10 +1999,10 @@ def view_report(report_id):
         gauge_color = '#ff1744' if score > 20 else '#00e676'
         
         # Color palette
-        colors = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
+        colors_list = ['#00E5FF', '#FFD600', '#76FF03', '#D500F9', '#FF1744']
         source_colors = {}
         for idx, s in enumerate(data.get('sources', [])):
-            source_colors[s.get('id')] = colors[idx % len(colors)]
+            source_colors[s.get('id')] = colors_list[idx % len(colors_list)]
         
         sources_html = ''
         for s in data.get('sources', []):
