@@ -439,19 +439,19 @@ def call_with_retry(func, max_retries=3):
                 raise
             time.sleep(2 * (attempt + 1))
 
-# FIX #1: CLAUDE API - USE STABLE ALIAS TO AVOID 404 ERRORS
+# FIX #1: CLAUDE API - USE STABLE VERSION ID TO AVOID 404 ERRORS
 def call_claude(prompt, max_tokens=8000):
     """
-    FIXED: Use 'claude-3-5-sonnet-latest' stable alias to avoid 404 errors.
+    FIXED: Use 'claude-3-5-sonnet-20240620' stable version ID to avoid 404 errors.
     Falls back to GPT-4 if Claude fails entirely.
     """
     if not anthropic_client:
-        raise Exception("Anthropic API key not configured")
+        return call_gpt4(prompt)  # Fallback if no API key
     
     try:
-        print(f"🤖 Calling Claude 3.5 Sonnet (latest stable alias)")
+        print(f"🤖 Calling Claude 3.5 Sonnet (stable version 20240620)")
         response = anthropic_client.messages.create(
-            model="claude-3-5-sonnet-latest",  # CHANGED: Use stable alias
+            model="claude-3-5-sonnet-20240620",  # CHANGED: Use specific stable version ID
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -736,9 +736,9 @@ def generate_essay_stream(instructions, word_count):
         while heartbeat_queue:
             yield heartbeat_queue.pop(0)
         
-        # Initial draft by Prof. Quill (Claude 3.5 Sonnet latest)
+        # Initial draft by Prof. Quill (Claude 3.5 Sonnet 20240620)
         yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Initial Draft'})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet latest) drafting initial essay...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet 20240620) drafting initial essay...'})}\n\n"
         
         # Truncate instructions to prevent token overflow
         truncated_instructions = truncate_text(instructions, max_tokens=2000)
@@ -1742,7 +1742,8 @@ def check_ai():
     # 1. FAIL-SAFE DATA RETRIEVAL
     try: 
         data = check_ai_consensus(text)
-    except: 
+    except Exception as e:
+        print(f"❌ Consensus Error: {e}")
         data = {"ai_score": 0, "segments": []}
 
     # 2. SAVE REPORT TO DB
@@ -1750,7 +1751,7 @@ def check_ai():
         report = Report(
             user_id=current_user.id,
             tool_type='ai_check',
-            title=f"AI Check: {text[:40]}...",
+            title=f"AI Check: {text[:30]}...",
             result_data=json.dumps(data)
         )
         db.session.add(report)
@@ -1766,7 +1767,7 @@ def check_ai():
         if seg.get('is_ai'):
             # NEON COLORS: Red for high, Yellow for medium
             bg = "rgba(255, 23, 68, 0.4)" if seg.get('confidence', 0) > 75 else "rgba(255, 214, 0, 0.3)"
-        content_html += f'<span style="background-color:{bg}; padding:3px 0; border-radius:2px;">{seg["text"]}</span> '
+        content_html += f'<span style="background-color:{bg}; padding:2px 0;">{seg["text"]}</span> '
 
     # 4. PDF SCRIPT
     pdf_script = """
@@ -1784,19 +1785,14 @@ def check_ai():
     html = f"""
     {pdf_script}
     <div id="ai-dashboard" style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; background: #121212; padding:20px;">
-        <div style="flex: 3; background: #1e1e1e; color: #e0e0e0; padding: 30px; border-radius: 12px; border: 1px solid #333; overflow-y: scroll; line-height: 1.9; font-size: 1.1em;">
+        <div style="flex: 3; background: #1e1e1e; color: #e0e0e0; padding: 30px; border-radius: 12px; border: 1px solid #333; overflow-y: auto; line-height: 1.9; font-size: 1.1em;">
             {content_html}
         </div>
         
         <div style="flex: 1; background: #252526; color: white; padding: 30px; border-radius: 12px; text-align: center; border: 1px solid #333;">
-            <h3 style="color:#bdc3c7; text-transform:uppercase; letter-spacing:1px;">AI Probability</h3>
-            <div style="font-size: 6em; color: #ff1744; font-weight: bold; margin: 20px 0; text-shadow: 0 0 20px rgba(255, 23, 68, 0.4);">
-                {data.get('ai_score', 0)}%
-            </div>
-            
-            <button onclick="exportAIPDF()" data-html2canvas-ignore="true" style="margin-top:30px; background: linear-gradient(45deg, #FF512F, #DD2476); color: white; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(221, 36, 118, 0.4);">
-                📥 Export PDF
-            </button>
+            <h3 style="color:#bdc3c7;">AI Probability</h3>
+            <div style="font-size: 6em; color: #ff1744; font-weight: bold; margin: 20px 0;">{data.get('ai_score', 0)}%</div>
+            <button onclick="exportAIPDF()" data-html2canvas-ignore="true" style="margin-top:30px; background: linear-gradient(45deg, #FF512F, #DD2476); color: white; border: none; padding: 12px 24px; border-radius: 25px; cursor: pointer; font-weight: bold;">📥 Export PDF</button>
         </div>
     </div>"""
     
