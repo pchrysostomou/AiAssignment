@@ -717,13 +717,14 @@ def plagiarism_reporter_claude(student_text, hunter_data, analyst_data, user_id)
     doc.build(story)
     return filename
 
-# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH ANTI-SHRINKAGE RATCHET
+# TOOL B: The Architect - GROWTH MODE + SELF-REFLECTION 3-AGENT SYSTEM WITH ENHANCED RATCHET + FLOOR MECHANISM
 def generate_essay_stream(instructions, word_count):
     """
     GROWTH MODE + SELF-REFLECTION CONSENSUS LOOP WITH CRITICAL FIXES:
     - WORD COUNT ENFORCEMENT: Minimum 95% of target (1,900/2,000) required before consensus
     - GUARANTEED EXIT: Round 14+ triggers automatic finalization to prevent timeout
-    - ANTI-SHRINKAGE RATCHET: Rejects any draft that shrinks during Growth Mode
+    - ENHANCED ANTI-SHRINKAGE RATCHET: Prevents shrinkage during growth AND refinement drop
+    - FLOOR MECHANISM: Once target is reached, word count CANNOT drop below target
     - HEARTBEAT: Sends ping every 10 seconds to prevent proxy timeouts
     - PROGRESS: Shows percentage completion (Round X/15 - Y%)
     """
@@ -740,7 +741,7 @@ def generate_essay_stream(instructions, word_count):
     heartbeat_thread.start()
     
     try:
-        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - ANTI-SHRINKAGE RATCHET ENABLED'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🎓 The Academic Board - ENHANCED RATCHET + FLOOR MECHANISM'})}\n\n"
         yield f"data: {json.dumps({'type': 'log', 'message': '💓 Heartbeat enabled: Connection will stay alive during long operations'})}\n\n"
         
         # CRITICAL: Minimum word count threshold (95% of target)
@@ -749,7 +750,8 @@ def generate_essay_stream(instructions, word_count):
         MAX_ROUNDS = 15
         
         yield f"data: {json.dumps({'type': 'log', 'message': f'📏 Word Count Enforcement: Minimum {MIN_WORD_COUNT} words required (95% of {word_count})'})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': '🔒 Anti-Shrinkage Ratchet: Word count can only go UP during growth'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🔒 Enhanced Ratchet: Prevents shrinkage during growth'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🧱 Floor Mechanism: Once target reached, word count cannot drop below target'})}\n\n"
         
         # Research Phase
         yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Research'})}\n\n"
@@ -1082,7 +1084,7 @@ Target met ({current_word_count}/{word_count}).
 Now polish the text while keeping count above {word_count}.
 """
 
-            # REVISION PHASE - Prof. Quill MERGES critic contributions WITH ANTI-SHRINKAGE RATCHET
+            # REVISION PHASE - Prof. Quill MERGES critic contributions WITH ENHANCED RATCHET + FLOOR MECHANISM
             yield f"data: {json.dumps({'type': 'log', 'message': '✍️ Prof. Quill (Claude 3.5 Sonnet) merging critic contributions...'})}\n\n"
             
             # Apply the mode to the prompt
@@ -1101,7 +1103,7 @@ EXECUTION:
 Revise the essay following the STRICT RULES of the current Mode above.
 """
 
-            # --- ANTI-SHRINKAGE RATCHET MECHANISM ---
+            # --- ENHANCED RATCHET GUARDRAIL WITH FLOOR MECHANISM ---
             try:
                 # 1. Save previous state
                 previous_draft_content = current_draft
@@ -1111,16 +1113,21 @@ Revise the essay following the STRICT RULES of the current Mode above.
                 candidate_draft = call_claude(merge_prompt, max_tokens=8000)
                 candidate_word_count = count_words(candidate_draft)
                 
-                # 3. THE RATCHET GUARDRAIL (Anti-Shrinkage Check)
-                # If in Growth Mode (under target), REJECT any draft that shrinks significantly
-                if (current_word_count < word_count) and (candidate_word_count < previous_word_count * 0.95):
+                # 3. ENHANCED RATCHET GUARDRAIL (Two-Condition Check)
+                # Condition 1: Shrinking while we are still trying to grow (Existing logic)
+                is_shrinking_during_growth = (current_word_count < word_count) and (candidate_word_count < previous_word_count * 0.95)
+                
+                # Condition 2: Dropping below target after we already reached it (NEW FLOOR MECHANISM)
+                # If we had 2033 words, and now we have 1220, REJECT IT.
+                dropped_below_target = (previous_word_count >= word_count) and (candidate_word_count < word_count)
+
+                if is_shrinking_during_growth or dropped_below_target:
                     
-                    yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ ANTI-SHRINKAGE TRIGGERED: Candidate draft dropped from {previous_word_count} to {candidate_word_count} words. REJECTING revision.'})}\n\n"
+                    failure_reason = "Shrinking during growth" if is_shrinking_during_growth else "Dropped below target (Floor violation)"
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ RATCHET TRIGGERED ({failure_reason}): Draft rejected. Candidate: {candidate_word_count} words, Previous: {previous_word_count} words'})}\n\n"
                     
-                    # Keep the old draft, but append a forcing instruction for the next round
-                    current_draft = previous_draft_content + "\n\n[SYSTEM NOTE: The previous attempt to revise shrank the text. You MUST write 300 NEW words immediately following this note.]"
-                    
-                    # Force next round logic to see the old count
+                    # Restore previous draft and force expansion instructions
+                    current_draft = previous_draft_content + "\n\n[SYSTEM NOTE: Your last edit cut too much text. You are FORBIDDEN from dropping below the word count target. Add 300 words.]"
                     current_word_count = previous_word_count
                     
                     yield f"data: {json.dumps({'type': 'log', 'message': f'🔒 Ratchet engaged: Keeping previous draft ({previous_word_count} words) + forcing 300-word expansion'})}\n\n"
@@ -1128,6 +1135,7 @@ Revise the essay following the STRICT RULES of the current Mode above.
                 else:
                     # Accept the new draft
                     current_draft = candidate_draft
+                    current_word_count = candidate_word_count  # Update this variable explicitly
                     yield f"data: {json.dumps({'type': 'log', 'message': f'✅ Draft accepted ({candidate_word_count} words)'})}\n\n"
 
             except Exception as e:
