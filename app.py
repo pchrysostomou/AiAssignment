@@ -1798,17 +1798,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# NEW: DYNAMIC PDF EXPORT ENDPOINT WITH "GLOBAL TINT" FALLBACK
+# UI FIX: PRECISION HIGHLIGHTING (RED SEGMENTS ONLY - NO GLOBAL TINT)
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR WITH "GLOBAL TINT" FALLBACK
-    Generates PDF on-the-fly with visual highlights for AI Detector and Plagiarism tools.
-    Uses robust string replacement to wrap segments in highlight tags within the master text.
-    FALLBACK: If segment matching fails (highlight_count == 0) but AI score > 1%, applies global tint.
-    GUARANTEES: Complete content rendering - no truncation.
-    No disk storage - streams directly to user.
+    UNIFIED DYNAMIC PDF GENERATOR - PRECISION HIGHLIGHTING ONLY
+    User Requirement: ONLY highlight detected segments in RED. No global tint fallback.
+    Even if AI score is 24%, only mark the specific sentences that contributed to that score.
+    Rest of text remains white/black (normal).
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1829,7 +1827,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) WITH GLOBAL TINT FALLBACK ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) - PRECISION HIGHLIGHTING ONLY ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1846,10 +1844,10 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- ROBUST HIGHLIGHTING WITH GLOBAL FALLBACK ---
+            # --- PRECISION HIGHLIGHTING (No Global Tint) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
-
+            
             # 1. Prepare Data
             full_text = data.get('input_text', '')
             segments = data.get('segments', [])
@@ -1862,65 +1860,42 @@ def export_pdf_dynamic(report_id):
                 story.append(Paragraph("<i>Error: No text content found in report data.</i>", styles['Italic']))
             else:
                 formatted_text = full_text
-                highlight_count = 0
                 
-                # 2. Attempt Exact Segment Highlighting
+                # 2. Apply Segment Highlights (RED ONLY)
                 if segments:
-                    # Sort by length to match longest phrases first
+                    # Sort longest to shortest to avoid partial replacement issues
                     segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
                     
                     for seg in segments:
-                        text_part = seg.get('text', '')
-                        score_seg = seg.get('confidence', 0)
+                        text_part = seg.get('text', '').strip()  # Remove surrounding whitespace
+                        confidence = seg.get('confidence', 0)
                         
                         if not text_part:
                             continue
                         
-                        # Color Selection (>1% Sensitivity)
-                        if score_seg > 80:
-                            bg = "#FFCCCC"    # Red
-                        elif score_seg > 40:
-                            bg = "#FFEB99"  # Orange
-                        elif score_seg > 1:
-                            bg = "#FFFFCC"   # Yellow
-                        else:
-                            bg = None
-                        
-                        # Try Replace
-                        if bg and text_part in formatted_text:
-                            # Wrap in font tag
-                            replacement = f'<font backColor="{bg}">{text_part}</font>'
+                        # USER REQUIREMENT: IF DETECTED, MAKE IT RED.
+                        # Regardless of score magnitude, if it's in the list, highlight it.
+                        bg_color = "#FFCCCC"  # Light Red (MistyRose)
+
+                        # Execute Replace
+                        # We try to match the stripped segment in the text
+                        if text_part in formatted_text:
+                            replacement = f'<font backColor="{bg_color}">{text_part}</font>'
                             formatted_text = formatted_text.replace(text_part, replacement)
-                            highlight_count += 1
-
-                # 3. FALLBACK: Global Tint Check
-                # If we failed to map specific segments BUT the overall score indicates AI
-                overall_score = data.get('ai_score', 0)
-                global_tint_color = None
                 
-                if highlight_count == 0 and overall_score > 1:
-                    if overall_score > 80:
-                        global_tint_color = "#FFCCCC"
-                    elif overall_score > 40:
-                        global_tint_color = "#FFEB99"
-                    else:
-                        global_tint_color = "#FFFFCC"
-                    
-                    story.append(Paragraph(f"<i>(Note: Exact segment mapping failed due to text formatting. Applying Global Tint based on {overall_score}% AI Score.)</i>", styles['Italic']))
-                    story.append(Spacer(1, 10))
-
-                # 4. Final Render
+                # 3. Final Render (NO FALLBACK TINT)
+                # If no segments matched, text remains white/black.
+                
+                # Split by newlines to preserve paragraphs
                 for paragraph in formatted_text.split('\n'):
                     if paragraph.strip():
-                        if global_tint_color:
-                            # Apply Global Tint style to the whole paragraph
-                            style = ParagraphStyle('GlobalTint', parent=styles['Normal'], backColor=global_tint_color)
-                            story.append(Paragraph(paragraph, style))
-                        else:
-                            # Render with inline highlights (if any succeeded)
+                        try:
+                            # Render with inline highlights
                             story.append(Paragraph(paragraph, styles['Normal']))
-                        
-                        story.append(Spacer(1, 8))
+                            story.append(Spacer(1, 8))
+                        except:
+                            # Fallback for problematic characters
+                            story.append(Paragraph(paragraph, styles['Normal']))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
@@ -1974,7 +1949,7 @@ def export_pdf_dynamic(report_id):
                 matches.sort(key=lambda x: len(x.get('text_segment', '')), reverse=True)
                 
                 for match in matches:
-                    segment = match.get('text_segment', '')
+                    segment = match.get('text_segment', '').strip()
                     source_id = match.get('source_id', 0)
                     
                     if not segment:
