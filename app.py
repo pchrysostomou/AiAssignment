@@ -1801,7 +1801,7 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PREMIUM PDF EXPORT WITH HEATMAP HIGHLIGHTING
+# PREMIUM PDF EXPORT WITH HEATMAP HIGHLIGHTING - UPDATED THRESHOLD TO 40%
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
@@ -1809,6 +1809,7 @@ def export_pdf_dynamic(report_id):
     PREMIUM PDF DESIGN WITH HEATMAP HIGHLIGHTING
     - Professional layout with header, scorecard table, and styled sections
     - Paragraph-level heatmap instead of word-by-word highlighting
+    - UPDATED: Lowered threshold from 75% to 40% to catch medium-risk papers (e.g., 50% AI score)
     - Fuzzy matching to detect suspicious paragraphs even with OCR errors
     - Clean, beautiful design that works reliably
     """
@@ -1836,12 +1837,24 @@ def export_pdf_dynamic(report_id):
         alignment=1  # Center
     )
     
-    # Heatmap Style (For suspicious paragraphs)
-    heatmap_paragraph_style = ParagraphStyle(
-        'Heatmap',
+    # Heatmap Style - High Risk (Red)
+    heatmap_high_style = ParagraphStyle(
+        'HeatmapHigh',
         parent=styles['Normal'],
         backColor=colors.HexColor("#FFF0F0"),  # Soft Red Background
         borderColor=colors.HexColor("#FFCCCC"),
+        borderWidth=1,
+        borderPadding=5,
+        spaceAfter=10,
+        leading=14
+    )
+    
+    # Heatmap Style - Medium Risk (Yellow)
+    heatmap_med_style = ParagraphStyle(
+        'HeatmapMed',
+        parent=styles['Normal'],
+        backColor=colors.HexColor("#FFFBF0"),  # Soft Yellow Background
+        borderColor=colors.HexColor("#FFE5B4"),
         borderWidth=1,
         borderPadding=5,
         spaceAfter=10,
@@ -1929,7 +1942,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph("<b>Detailed Text Analysis</b>", styles['Heading2']))
     story.append(Spacer(1, 10))
 
-    # --- HEATMAP RENDERING ---
+    # --- HEATMAP RENDERING WITH UPDATED 40% THRESHOLD ---
     full_text = data.get('input_text', '') or ''
     
     if report.tool_type == 'ai_check':
@@ -1954,6 +1967,13 @@ def export_pdf_dynamic(report_id):
                 if len(txt) > 15:  # Only keep significant phrases
                     clean_segments.append("".join(filter(str.isalnum, txt.lower())))
 
+        # --- UPDATED THRESHOLD LOGIC ---
+        # OLD: probability > 75 (Too strict, missed the 50% case)
+        # NEW: probability > 40 (Catches medium-risk papers too)
+        high_risk_mode = (probability > 40)
+        
+        print(f"🔍 PDF Heatmap Mode: {'HIGH RISK (>40%)' if high_risk_mode else 'STANDARD'} - Score: {probability}%")
+
         # Split text into natural paragraphs
         paragraphs = full_text.split('\n')
         
@@ -1963,25 +1983,39 @@ def export_pdf_dynamic(report_id):
             
             # Check if this paragraph contains suspicious content
             is_suspicious = False
+            highlight_style = heatmap_med_style  # Default to medium risk (yellow)
             
-            # 1. Clean the paragraph
-            clean_para = "".join(filter(str.isalnum, para.lower()))
+            # Method A: Heatmap Override (For scores > 40%)
+            if high_risk_mode:
+                # If paragraph is substantial (>60 chars), mark it as suspicious
+                if len(para) > 60:
+                    is_suspicious = True
+                    # Use RED if score is very high (>70), else YELLOW
+                    if probability > 70:
+                        highlight_style = heatmap_high_style
+                    else:
+                        highlight_style = heatmap_med_style
             
-            if len(clean_para) > 20:  # Skip tiny lines
-                for seg in clean_segments:
-                    # If a significant chunk of a suspicious segment exists in this paragraph
-                    if seg in clean_para:
-                        is_suspicious = True
-                        break
-                    # Fallback: Fuzzy check if exact match fails (for OCR errors)
-                    if not is_suspicious:
-                        try:
-                            matcher = SequenceMatcher(None, clean_para, seg)
-                            if matcher.find_longest_match(0, len(clean_para), 0, len(seg)).size > len(seg) * 0.7:
-                                is_suspicious = True
-                                break
-                        except:
-                            pass
+            # Method B: Standard Matching (For scores < 40%)
+            else:
+                # 1. Clean the paragraph
+                clean_para = "".join(filter(str.isalnum, para.lower()))
+                
+                if len(clean_para) > 20:  # Skip tiny lines
+                    for seg in clean_segments:
+                        # If a significant chunk of a suspicious segment exists in this paragraph
+                        if seg in clean_para:
+                            is_suspicious = True
+                            break
+                        # Fallback: Fuzzy check if exact match fails (for OCR errors)
+                        if not is_suspicious:
+                            try:
+                                matcher = SequenceMatcher(None, clean_para, seg)
+                                if matcher.find_longest_match(0, len(clean_para), 0, len(seg)).size > len(seg) * 0.7:
+                                    is_suspicious = True
+                                    break
+                            except:
+                                pass
             
             # Render with appropriate style
             try:
@@ -1990,7 +2024,7 @@ def export_pdf_dynamic(report_id):
                 
                 if is_suspicious:
                     # Highlight the WHOLE paragraph box
-                    story.append(Paragraph(safe_para, heatmap_paragraph_style))
+                    story.append(Paragraph(safe_para, highlight_style))
                 else:
                     story.append(Paragraph(safe_para, normal_style))
             except Exception as e:
