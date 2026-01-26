@@ -1799,14 +1799,13 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PDF FIX: FAIL-SAFE RENDERING - ALWAYS SHOW FULL TEXT
+# PDF FIX: CORRECTED HIGHLIGHT MATCHING PIPELINE
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    FAIL-SAFE PDF RENDERER - ALWAYS DISPLAYS FULL TEXT
-    User Requirement: PDF must NEVER be blank. Full text always rendered.
-    If segments exist, highlight them. If not, show plain text.
+    CORRECTED PDF RENDERER WITH PROPER HIGHLIGHT MATCHING
+    Pipeline: Match on RAW text → Escape matched parts → Preserve <font> tags
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1827,7 +1826,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) - FAIL-SAFE RENDERING ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) - CORRECTED MATCHING ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1844,7 +1843,7 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- FAIL-SAFE TEXT RENDERING ---
+            # --- CORRECTED HIGHLIGHT MATCHING PIPELINE ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
@@ -1858,36 +1857,40 @@ def export_pdf_dynamic(report_id):
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available for this report.</i>", styles['Normal']))
             else:
-                # Escape to avoid ReportLab markup crashes
-                safe_text = escape(full_text)
-                formatted_text = safe_text
+                # STEP 1: Work on RAW text (no escaping yet)
+                raw_text = full_text
+                highlighted = raw_text
 
                 if segments:
                     segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
 
                     for seg in segments:
                         text_part = (seg.get('text','') or '').strip()
-                        if not text_part:
+                        if not text_part or len(text_part) > 800:
                             continue
 
-                        # Avoid catastrophic regex on huge segments
-                        if len(text_part) > 800:
-                            continue
-
-                        safe_part = escape(text_part)
-                        pattern_str = re.escape(safe_part).replace(r'\ ', r'\s+')
+                        # STEP 2: Create flexible regex pattern
+                        pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
 
                         try:
                             pattern = re.compile(pattern_str, re.IGNORECASE)
-                            formatted_text = pattern.sub(
-                                lambda m: f'<font backColor="#FFCCCC">{m.group(0)}</font>',
-                                formatted_text
+                            # STEP 3: Replace with highlighted version (escape the matched text)
+                            highlighted = pattern.sub(
+                                lambda m: f'<font backColor="#FFCCCC">{escape(m.group(0))}</font>',
+                                highlighted
                             )
                         except re.error:
                             continue
 
-                # Render final text (always executes)
-                for para in formatted_text.split('\n'):
+                # STEP 4: Escape the rest (but preserve <font> tags)
+                safe_output = escape(highlighted).replace(
+                    '&lt;font backColor="#FFCCCC"&gt;', '<font backColor="#FFCCCC">'
+                ).replace(
+                    '&lt;/font&gt;', '</font>'
+                )
+
+                # STEP 5: Render paragraphs
+                for para in safe_output.split('\n'):
                     if para.strip():
                         story.append(Paragraph(para, styles['Normal']))
                         story.append(Spacer(1, 8))
@@ -1927,7 +1930,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- FAIL-SAFE TEXT RENDERING ---
+            # --- CORRECTED HIGHLIGHT MATCHING PIPELINE ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
@@ -1937,9 +1940,9 @@ def export_pdf_dynamic(report_id):
             if not full_text:
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
             else:
-                # Apply highlights using regex
-                safe_text = escape(full_text)
-                formatted_text = safe_text
+                # STEP 1: Work on RAW text
+                raw_text = full_text
+                highlighted = raw_text
                 
                 # Sort matches by length (longest first)
                 matches.sort(key=lambda x: len(x.get('text_segment', '')), reverse=True)
@@ -1968,19 +1971,31 @@ def export_pdf_dynamic(report_id):
                             bg_color = "#FFFFCC"  # Yellow
                             prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
                         
-                        # Create flexible regex pattern
-                        safe_segment = escape(segment)
-                        pattern_str = re.escape(safe_segment).replace(r'\ ', r'\s+')
+                        # STEP 2: Create flexible regex pattern
+                        pattern_str = re.escape(segment).replace(r'\ ', r'\s+')
                         
                         try:
                             pattern = re.compile(pattern_str, re.IGNORECASE)
-                            highlighted_segment = f'<font backColor="{bg_color}">{prefix}\\g<0></font>'
-                            formatted_text = pattern.sub(highlighted_segment, formatted_text)
+                            # STEP 3: Replace with highlighted version (escape the matched text)
+                            highlighted = pattern.sub(
+                                lambda m: f'<font backColor="{bg_color}">{escape(prefix + m.group(0))}</font>',
+                                highlighted
+                            )
                         except re.error:
                             pass
                 
-                # Render the final text
-                for paragraph in formatted_text.split('\n'):
+                # STEP 4: Escape the rest (but preserve <font> tags)
+                safe_output = escape(highlighted)
+                # Unescape font tags
+                safe_output = re.sub(
+                    r'&lt;font backColor="([^"]+)"&gt;',
+                    r'<font backColor="\1">',
+                    safe_output
+                )
+                safe_output = safe_output.replace('&lt;/font&gt;', '</font>')
+                
+                # STEP 5: Render paragraphs
+                for paragraph in safe_output.split('\n'):
                     if paragraph.strip():
                         try:
                             story.append(Paragraph(paragraph, styles['Normal']))
