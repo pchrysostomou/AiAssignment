@@ -1800,16 +1800,17 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PRODUCTION-READY PDF RENDERER WITH REGEX SAFETY & LIMITS
+# PLATINUM STANDARD PDF RENDERER WITH FUZZY MATCHING + BOUNDARIES + SAFETY
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    PRODUCTION-READY PDF RENDERER
-    - Uses [ \t]+ instead of \s+ to prevent newline matching
-    - Caps highlighting to top 50 segments and 100k chars
-    - Uses logging instead of print
-    - Maintains try...except for guaranteed PDF download
+    PLATINUM STANDARD PDF RENDERER
+    - Fuzzy matching with alphanumeric-only coordinate map
+    - Boundary checking for whole-word matches
+    - Interval cap at 100 highlighted sections
+    - Clean logging with logging.exception
+    - Guaranteed PDF download with fallbacks
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1847,11 +1848,10 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- PRODUCTION-READY PDF RENDERER ---
+            # --- PLATINUM STANDARD PDF RENDERER (Fuzzy + Boundaries + Safety) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
-            # 1. Get Raw Data
             full_text = data.get('input_text', '') or ''
             segments = data.get('segments', []) or []
 
@@ -1862,66 +1862,125 @@ def export_pdf_dynamic(report_id):
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # SAFETY LIMIT: Cap text length to prevent DoS on huge files
-                if len(full_text) > 100000:
+                # 1. HARD LIMITS
+                if len(full_text) > 100000: 
                     full_text = full_text[:100000] + "... (truncated)"
                 
-                # DEFAULT: Safe plain text (in case highlighting fails)
-                final_xml = escape(full_text)
+                final_xml = "" 
                 
-                # TRY to apply Highlighting
                 try:
-                    formatted_text = full_text
-                    MARKER_START = "@@HL_START@@"
-                    MARKER_END = "@@HL_END@@"
+                    # 2. PREPARE COORDINATE MAP
+                    clean_text = ""
+                    orig_indices = []
                     
-                    if segments:
-                        # Sort longest first
+                    for i, char in enumerate(full_text):
+                        if char.isalnum(): 
+                            clean_text += char.lower()
+                            orig_indices.append(i)
+                    
+                    found_intervals = [] 
+                    total_matches = 0
+                    MAX_TOTAL_MATCHES = 200
+                    MAX_MATCHES_PER_SEG = 3
+
+                    # 3. FIND MATCHES
+                    if segments and clean_text:
                         segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
-                        
-                        # PERFORMANCE LIMIT: Only process top 50 longest segments
-                        # This prevents infinite loops on fragmented data
-                        for seg in segments[:50]:
-                            text_part = (seg.get('text', '') or '').strip()
-                            if not text_part: continue
-                            if len(text_part) < 5 or len(text_part) > 1000: continue # Skip noise & huge blocks
 
-                            # REGEX FIX: Use [ \t]+ instead of \s+
-                            # We MUST NOT match newlines, otherwise split('\n') later will break the tags.
-                            pattern_str = re.escape(text_part).replace(r'\ ', r'[ \t]+')
+                        for seg in segments[:80]: 
+                            if total_matches >= MAX_TOTAL_MATCHES: break
                             
-                            try:
-                                pattern = re.compile(pattern_str, re.IGNORECASE)
-                                # Apply markers (NOT XML tags yet)
-                                formatted_text = pattern.sub(
-                                    lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
-                                    formatted_text
-                                )
-                            except Exception:
-                                continue
-                    
-                    # Verify markers exist
-                    if MARKER_START in formatted_text:
-                        # Escape everything (markers become safe text)
-                        safe_text = escape(formatted_text)
-                        # Swap markers for real XML tags
-                        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
-                    else:
-                        final_xml = escape(full_text)
+                            seg_text = (seg.get('text', '') or '').strip()
+                            if not seg_text or len(seg_text) < 8: continue
+                            
+                            clean_seg = "".join([c.lower() for c in seg_text if c.isalnum()])
+                            if not clean_seg: continue
 
-                except Exception as e:
-                    # Log error properly and fallback
-                    logging.error(f"PDF HIGHLIGHT CRASH: {str(e)}")
+                            start_search = 0
+                            seg_matches = 0
+                            
+                            while True:
+                                if seg_matches >= MAX_MATCHES_PER_SEG: break
+                                if total_matches >= MAX_TOTAL_MATCHES: break
+
+                                found_idx = clean_text.find(clean_seg, start_search)
+                                if found_idx == -1: break
+                                
+                                # --- BOUNDARY CHECK (New Feature) ---
+                                # Check character before match
+                                is_start_ok = (found_idx == 0)
+                                if not is_start_ok:
+                                    prev_orig_idx = orig_indices[found_idx] - 1
+                                    if prev_orig_idx >= 0 and not full_text[prev_orig_idx].isalnum():
+                                        is_start_ok = True
+                                
+                                # Check character after match
+                                is_end_ok = ((found_idx + len(clean_seg)) == len(clean_text))
+                                if not is_end_ok:
+                                    end_map_idx = found_idx + len(clean_seg) - 1
+                                    next_orig_idx = orig_indices[end_map_idx] + 1
+                                    if next_orig_idx < len(full_text) and not full_text[next_orig_idx].isalnum():
+                                        is_end_ok = True
+
+                                # Only accept if boundaries look like whole words
+                                if is_start_ok and is_end_ok:
+                                    try:
+                                        orig_start = orig_indices[found_idx]
+                                        orig_end = orig_indices[found_idx + len(clean_seg) - 1] + 1
+                                        found_intervals.append([orig_start, orig_end])
+                                        
+                                        seg_matches += 1
+                                        total_matches += 1
+                                    except IndexError:
+                                        pass 
+                                
+                                start_search = found_idx + len(clean_seg)
+                                if start_search >= len(clean_text): break
+
+                    # 4. MERGE OVERLAPS
+                    found_intervals.sort(key=lambda x: x[0])
+                    
+                    merged_intervals = []
+                    if found_intervals:
+                        current_start, current_end = found_intervals[0]
+                        for next_start, next_end in found_intervals[1:]:
+                            if next_start < current_end:
+                                current_end = max(current_end, next_end)
+                            else:
+                                merged_intervals.append((current_start, current_end))
+                                current_start, current_end = next_start, next_end
+                        merged_intervals.append((current_start, current_end))
+                    
+                    # --- INTERVAL CAP (New Feature) ---
+                    if len(merged_intervals) > 100:
+                        merged_intervals.sort(key=lambda x: x[1]-x[0], reverse=True)
+                        merged_intervals = merged_intervals[:100]
+                        merged_intervals.sort(key=lambda x: x[0])
+
+                    # 5. APPLY TAGS
+                    text_chars = list(full_text)
+                    for start, end in reversed(merged_intervals):
+                        text_chars.insert(end, "@@HL_END@@")
+                        text_chars.insert(start, "@@HL_START@@")
+                    
+                    raw_result = "".join(text_chars)
+
+                    # 6. ESCAPE & SWAP
+                    safe_text = escape(raw_result)
+                    final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
+
+                except Exception:
+                    logging.exception("PDF GENERATION ERROR")
                     final_xml = escape(full_text)
 
-                # 4. RENDER
-                # Safe split by newline. Since regex didn't touch newlines, tags are safe.
+                # 7. RENDER
+                if not final_xml: final_xml = escape(full_text)
+
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
                         try:
                             story.append(Paragraph(paragraph, styles['Normal']))
-                        except Exception as e:
-                            # Ultra-fallback: Strip tags if Paragraph crashes
+                        except:
                             clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
                             story.append(Paragraph(clean, styles['Normal']))
                         story.append(Spacer(1, 8))
@@ -1961,92 +2020,132 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- PRODUCTION-READY PDF RENDERER ---
+            # --- PLATINUM STANDARD PDF RENDERER (Fuzzy + Boundaries + Safety) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
-            # 1. Get Raw Data
             full_text = data.get('input_text', '') or ''
             matches = data.get('matches', []) or []
 
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # SAFETY LIMIT: Cap text length to prevent DoS on huge files
+                # 1. HARD LIMITS
                 if len(full_text) > 100000:
                     full_text = full_text[:100000] + "... (truncated)"
                 
-                # DEFAULT: Safe plain text (in case highlighting fails)
-                final_xml = escape(full_text)
+                final_xml = ""
                 
-                # TRY to apply Highlighting
                 try:
-                    formatted_text = full_text
-                    MARKER_START = "@@HL_START@@"
-                    MARKER_END = "@@HL_END@@"
+                    # 2. PREPARE COORDINATE MAP
+                    clean_text = ""
+                    orig_indices = []
                     
-                    if matches:
-                        # Sort longest first
-                        matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
-                        
-                        # PERFORMANCE LIMIT: Only process top 50 longest matches
-                        for match in matches[:50]:
-                            segment = (match.get('text_segment', '') or '').strip()
-                            if not segment: continue
-                            if len(segment) < 5 or len(segment) > 1000: continue # Skip noise & huge blocks
-                            
-                            source_id = match.get('source_id', 0)
-                            
-                            # Find source info
-                            source = next((s for s in sources if s.get('id') == source_id), None)
-                            if source:
-                                similarity = source.get('similarity', 0)
-                                domain = source.get('domain', 'Unknown')
-                                
-                                # Determine prefix
-                                if similarity > 50:
-                                    prefix = f'🔴 HIGH RISK ({similarity}% - {domain}): '
-                                elif similarity > 20:
-                                    prefix = f'🟠 Possible Match ({similarity}% - {domain}): '
-                                else:
-                                    prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
-                                
-                                # REGEX FIX: Use [ \t]+ instead of \s+
-                                pattern_str = re.escape(segment).replace(r'\ ', r'[ \t]+')
-                                
-                                try:
-                                    pattern = re.compile(pattern_str, re.IGNORECASE)
-                                    # Apply markers with prefix
-                                    formatted_text = pattern.sub(
-                                        lambda m: f"{MARKER_START}{prefix}{m.group(0)}{MARKER_END}",
-                                        formatted_text
-                                    )
-                                except Exception:
-                                    continue
+                    for i, char in enumerate(full_text):
+                        if char.isalnum():
+                            clean_text += char.lower()
+                            orig_indices.append(i)
                     
-                    # Verify markers exist
-                    if MARKER_START in formatted_text:
-                        # Escape everything (markers become safe text)
-                        safe_text = escape(formatted_text)
-                        # Swap markers for real XML tags (color based on prefix)
-                        # For simplicity, use one color for all matches
-                        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
-                    else:
-                        final_xml = escape(full_text)
+                    found_intervals = []
+                    total_matches = 0
+                    MAX_TOTAL_MATCHES = 200
+                    MAX_MATCHES_PER_SEG = 3
 
-                except Exception as e:
-                    # Log error properly and fallback
-                    logging.error(f"PDF HIGHLIGHT CRASH: {str(e)}")
+                    # 3. FIND MATCHES
+                    if matches and clean_text:
+                        matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
+
+                        for match in matches[:80]:
+                            if total_matches >= MAX_TOTAL_MATCHES: break
+                            
+                            segment = (match.get('text_segment', '') or '').strip()
+                            if not segment or len(segment) < 8: continue
+                            
+                            clean_seg = "".join([c.lower() for c in segment if c.isalnum()])
+                            if not clean_seg: continue
+
+                            start_search = 0
+                            seg_matches = 0
+                            
+                            while True:
+                                if seg_matches >= MAX_MATCHES_PER_SEG: break
+                                if total_matches >= MAX_TOTAL_MATCHES: break
+
+                                found_idx = clean_text.find(clean_seg, start_search)
+                                if found_idx == -1: break
+                                
+                                # --- BOUNDARY CHECK ---
+                                is_start_ok = (found_idx == 0)
+                                if not is_start_ok:
+                                    prev_orig_idx = orig_indices[found_idx] - 1
+                                    if prev_orig_idx >= 0 and not full_text[prev_orig_idx].isalnum():
+                                        is_start_ok = True
+                                
+                                is_end_ok = ((found_idx + len(clean_seg)) == len(clean_text))
+                                if not is_end_ok:
+                                    end_map_idx = found_idx + len(clean_seg) - 1
+                                    next_orig_idx = orig_indices[end_map_idx] + 1
+                                    if next_orig_idx < len(full_text) and not full_text[next_orig_idx].isalnum():
+                                        is_end_ok = True
+
+                                if is_start_ok and is_end_ok:
+                                    try:
+                                        orig_start = orig_indices[found_idx]
+                                        orig_end = orig_indices[found_idx + len(clean_seg) - 1] + 1
+                                        found_intervals.append([orig_start, orig_end])
+                                        
+                                        seg_matches += 1
+                                        total_matches += 1
+                                    except IndexError:
+                                        pass
+                                
+                                start_search = found_idx + len(clean_seg)
+                                if start_search >= len(clean_text): break
+
+                    # 4. MERGE OVERLAPS
+                    found_intervals.sort(key=lambda x: x[0])
+                    
+                    merged_intervals = []
+                    if found_intervals:
+                        current_start, current_end = found_intervals[0]
+                        for next_start, next_end in found_intervals[1:]:
+                            if next_start < current_end:
+                                current_end = max(current_end, next_end)
+                            else:
+                                merged_intervals.append((current_start, current_end))
+                                current_start, current_end = next_start, next_end
+                        merged_intervals.append((current_start, current_end))
+                    
+                    # --- INTERVAL CAP ---
+                    if len(merged_intervals) > 100:
+                        merged_intervals.sort(key=lambda x: x[1]-x[0], reverse=True)
+                        merged_intervals = merged_intervals[:100]
+                        merged_intervals.sort(key=lambda x: x[0])
+
+                    # 5. APPLY TAGS
+                    text_chars = list(full_text)
+                    for start, end in reversed(merged_intervals):
+                        text_chars.insert(end, "@@HL_END@@")
+                        text_chars.insert(start, "@@HL_START@@")
+                    
+                    raw_result = "".join(text_chars)
+
+                    # 6. ESCAPE & SWAP
+                    safe_text = escape(raw_result)
+                    final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
+
+                except Exception:
+                    logging.exception("PDF GENERATION ERROR")
                     final_xml = escape(full_text)
 
-                # 4. RENDER
-                # Safe split by newline. Since regex didn't touch newlines, tags are safe.
+                # 7. RENDER
+                if not final_xml: final_xml = escape(full_text)
+
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
                         try:
                             story.append(Paragraph(paragraph, styles['Normal']))
-                        except Exception as e:
-                            # Ultra-fallback: Strip tags if Paragraph crashes
+                        except:
                             clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
                             story.append(Paragraph(clean, styles['Normal']))
                         story.append(Spacer(1, 8))
