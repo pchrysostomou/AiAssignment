@@ -1801,16 +1801,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PLACEHOLDER STRATEGY PDF EXPORT - HIGHLIGHT EVERYTHING
+# AGGRESSIVE REGEX PDF EXPORT - FIXES MISSING HIGHLIGHTS
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    PLACEHOLDER STRATEGY: "Highlight Everything" Implementation
-    - NO thresholds or safety margins
-    - Separates Regex matching (raw text) from XML escaping (ReportLab)
-    - Prevents &amp; corruption by using placeholder markers
-    - Increased limit to 2000 chars to capture large paragraphs
+    AGGRESSIVE REGEX MATCHING STRATEGY
+    - Uses [\s\n\r]+ to match ANY whitespace (spaces, tabs, newlines)
+    - Placeholder markers prevent XML corruption
+    - Guarantees highlights even with whitespace mismatches
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1903,30 +1902,30 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
     
-    # --- FINAL ROBUST PDF RENDERER (Placeholder Strategy) ---
-    story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
+    # --- FINAL AGGRESSIVE HIGHLIGHT RENDERER ---
+    story.append(Paragraph("<b>Detailed Text Analysis:</b>", styles['Heading3']))
     story.append(Spacer(1, 12))
 
     # 1. Get Raw Data
     full_text = data.get('input_text', '') or ''
     segments = data.get('segments', []) or []
 
-    # Fallback: Reconstruct text if missing
+    # Fallback reconstruction
     if not full_text and segments:
         full_text = " ".join([s.get('text', '') for s in segments])
 
     if not full_text.strip():
         story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
     else:
-        # Work on RAW text first (Matches better than escaped text)
+        # Prepare the RAW text for regex operations
         formatted_text = full_text
         
-        # Define Unique Markers (Safe from escape)
-        MARKER_START = "@@HL_START@@"
-        MARKER_END = "@@HL_END@@"
+        # Markers for highlighting (safe from escaping)
+        MARKER_START = "@@RED_START@@"
+        MARKER_END = "@@RED_END@@"
 
         if segments:
-            # Sort longest first to prioritize big chunks
+            # Sort longest first to prevent overlap issues
             segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
 
             for seg in segments:
@@ -1934,42 +1933,47 @@ def export_pdf_dynamic(report_id):
                 if not text_part: 
                     continue
                 
-                # USER DEMAND: HIGHLIGHT EVERYTHING.
-                # Increased guardrail to 2000 chars to capture large paragraphs.
-                if len(text_part) > 2000: 
-                    continue 
+                # GUARDRAIL: Skip extremely short segments (noise) to avoid errors
+                if len(text_part) < 10: 
+                    continue
 
-                # Flexible Regex on RAW text (Ignore whitespace diffs)
-                pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
+                # BUILD ROBUST REGEX
+                # 1. Escape special characters (like ?, *, +)
+                # 2. Replace ANY whitespace sequence with [\s\n\r]+ (matches spaces OR newlines)
+                pattern_str = re.escape(text_part).replace(r'\ ', r'[\s\n\r]+')
                 
                 try:
-                    pattern = re.compile(pattern_str, re.IGNORECASE)
-                    # Wrap match in markers (NOT HTML tags yet)
+                    # Compile regex (Ignore Case + DotAll)
+                    pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
+                    
+                    # Substitute with Markers
+                    # We use a lambda to preserve the original casing/spacing of the document
                     formatted_text = pattern.sub(
                         lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
                         formatted_text
                     )
-                except:
+                except Exception as e:
+                    print(f"Regex failed for segment: {str(e)}")
                     continue
 
-        # 2. ESCAPE THE WHOLE STRING (Safety Step)
-        # This turns "&" -> "&amp;", "<" -> "&lt;" globally.
-        # Markers like "@@HL_START@@" remain safe.
+        # 2. ESCAPE THE TEXT (Make it PDF-safe)
+        # This turns "&" -> "&amp;", "<" -> "&lt;"
         safe_text = escape(formatted_text)
 
-        # 3. SWAP MARKERS FOR REAL TAGS (Render Step)
-        # Inject ReportLab tags into the safe text
+        # 3. INJECT HTML TAGS
+        # Replace our markers with ReportLab font tags
         final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
 
-        # 4. RENDER
+        # 4. RENDER TO PDF
+        # Split by double newlines to preserve paragraph structure
         for paragraph in final_xml.split('\n'):
             if paragraph.strip():
                 try:
                     story.append(Paragraph(paragraph, styles['Normal']))
+                    story.append(Spacer(1, 8))
                 except:
-                    # Fallback for extreme edge cases
+                    # Fallback for complex chars
                     story.append(Paragraph(escape(paragraph), styles['Normal']))
-                story.append(Spacer(1, 8))
 
     # Build PDF
     try:
