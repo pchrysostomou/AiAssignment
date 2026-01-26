@@ -27,7 +27,6 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.lib.units import inch
 from xml.sax.saxutils import escape
-from difflib import SequenceMatcher  # CRITICAL IMPORT
 
 load_dotenv()
 
@@ -1801,17 +1800,15 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# HOTFIX: FUZZY LEVENSHTEIN MATCHING WITH 60% THRESHOLD FOR HIGHLY BROKEN OCR
+# NUCLEAR FIX: WILDCARD REGEX FOR BROKEN TEXT
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    HOTFIX: FUZZY LEVENSHTEIN RENDERER WITH 60% THRESHOLD FOR HIGHLY BROKEN OCR
-    - Uses difflib.SequenceMatcher for fuzzy matching
-    - Handles severely fragmented text (e.g., "writ ten", "generali ze", "real - world")
-    - Accepts matches with >60% similarity ratio (lowered from 80% to handle worse OCR)
-    - Caps at 60 segments to prevent timeout
-    - Solves zero-highlight issue for OCR-distorted PDFs
+    NUCLEAR FIX: Letter-by-Letter Wildcard Regex for Broken Text
+    - Constructs [\W_]* pattern between every character
+    - Matches sequences regardless of ANY intervening spaces/newlines/symbols
+    - Solves zero-highlight issue for severely fragmented OCR PDFs
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1849,114 +1846,97 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- FUZZY LEVENSHTEIN RENDERER (For Highly Broken OCR) ---
+            # --- WILDCARD REGEX RENDERER (The "Nuclear" Option) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
             full_text = data.get('input_text', '') or ''
             segments = data.get('segments', []) or []
 
-            # Fallback reconstruction
+            # Fallback
             if not full_text and segments:
                 full_text = " ".join([s.get('text', '') for s in segments])
 
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # 1. HARD LIMITS
+                # 1. LIMITS
                 if len(full_text) > 100000: 
                     full_text = full_text[:100000] + "... (truncated)"
                 
                 final_xml = "" 
                 
                 try:
-                    # 2. PREPARE COORDINATE MAP
-                    # Map clean_index -> original_index
-                    clean_text = ""
-                    orig_indices = []
+                    # Markers
+                    MARKER_START = "@@HL_START@@"
+                    MARKER_END = "@@HL_END@@"
                     
-                    # We strip everything except alphanumerics to give the matcher a chance
-                    for i, char in enumerate(full_text):
-                        if char.isalnum(): 
-                            clean_text += char.lower()
-                            orig_indices.append(i)
+                    # Copy full text to work on
+                    working_text = full_text
                     
-                    found_intervals = []
-                    
-                    # 3. FUZZY MATCHING LOOP
-                    if segments and clean_text:
-                        # Sort longest first to anchor the big chunks
+                    # 2. FIND MATCHES WITH WILDCARDS
+                    if segments:
+                        # Sort longest first to capture big phrases before they get broken up
                         segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
-
-                        # Cap at top 60 segments to prevent timeouts (SequenceMatcher is heavy)
-                        for seg in segments[:60]: 
-                            seg_text = (seg.get('text', '') or '').strip()
-                            if len(seg_text) < 10: 
-                                continue # Skip short noise
+                        
+                        count = 0
+                        
+                        for seg in segments[:60]: # Limit 60 segments
+                            if count > 150: break # Safety cap
                             
-                            # Clean the segment target
-                            clean_seg = "".join([c.lower() for c in seg_text if c.isalnum()])
-                            if not clean_seg: 
+                            seg_text = (seg.get('text', '') or '').strip()
+                            if len(seg_text) < 8: continue # Skip noise
+                            
+                            # A. CLEAN SEGMENT TO PURE CHARS
+                            # "Real-World" -> "RealWorld"
+                            clean_chars = [re.escape(c) for c in seg_text if c.isalnum()]
+                            if not clean_chars: continue
+                            
+                            # B. BUILD WILDCARD REGEX
+                            # "RealWorld" -> "R[\W_]*e[\W_]*a[\W_]*l[\W_]*..."
+                            # [\W_]* means "match 0 or more non-alphanumeric chars (spaces, hyphens, newlines)"
+                            pattern_str = r"[\W_]*".join(clean_chars)
+                            
+                            try:
+                                # C. FIND AND REPLACE WITH MARKERS
+                                # We use a compiled regex for speed
+                                pattern = re.compile(pattern_str, re.IGNORECASE)
+                                
+                                # We must be careful not to double-mark. 
+                                # Simplest way in this chaos is direct substitution if not already marked.
+                                # Note: This limits us to non-nested highlights, which is safer anyway.
+                                
+                                def replace_with_marker(match):
+                                    m_text = match.group(0)
+                                    # Avoid replacing if already marked (simple check)
+                                    if "@@HL" in m_text: 
+                                        return m_text
+                                    return f"{MARKER_START}{m_text}{MARKER_END}"
+
+                                working_text, n = pattern.subn(replace_with_marker, working_text)
+                                count += n
+                                
+                            except Exception:
                                 continue
 
-                            # THE MAGIC: Find longest fuzzy match
-                            # This finds where clean_seg fits into clean_text, allowing for errors
-                            matcher = SequenceMatcher(None, clean_text, clean_seg)
-                            
-                            # We look for a match that is reasonably long
-                            match = matcher.find_longest_match(0, len(clean_text), 0, len(clean_seg))
-                            
-                            # LOGIC: If the match covers > 60% of the segment, accept it.
-                            # We use 60% because "writ ten" breaks might reduce the contiguous block size.
-                            if match.size > len(clean_seg) * 0.6:
-                                try:
-                                    # Map back to original indices
-                                    start_clean = match.a
-                                    end_clean = match.a + match.size - 1
-                                    
-                                    orig_start = orig_indices[start_clean]
-                                    orig_end = orig_indices[end_clean] + 1
-                                    
-                                    found_intervals.append([orig_start, orig_end])
-                                except IndexError:
-                                    pass
-
-                    # 4. MERGE OVERLAPS
-                    found_intervals.sort(key=lambda x: x[0])
-                    merged_intervals = []
-                    if found_intervals:
-                        current_start, current_end = found_intervals[0]
-                        for next_start, next_end in found_intervals[1:]:
-                            if next_start < current_end:
-                                current_end = max(current_end, next_end)
-                            else:
-                                merged_intervals.append((current_start, current_end))
-                                current_start, current_end = next_start, next_end
-                        merged_intervals.append((current_start, current_end))
-
-                    # 5. APPLY TAGS
-                    text_chars = list(full_text)
-                    for start, end in reversed(merged_intervals):
-                        text_chars.insert(end, "@@HL_END@@")
-                        text_chars.insert(start, "@@HL_START@@")
+                    # 3. ESCAPE AND RENDER
+                    # Now we escape the text, but our markers are still plain text "@@HL..."
+                    safe_text = escape(working_text)
                     
-                    raw_result = "".join(text_chars)
-
-                    # 6. ESCAPE & SWAP
-                    safe_text = escape(raw_result)
-                    final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
+                    # Swap markers for real tags
+                    final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
 
                 except Exception as e:
-                    logging.exception("PDF FUZZY ERROR")
+                    logging.exception("PDF WILDCARD ERROR")
                     final_xml = escape(full_text)
 
-                # 7. RENDER
-                if not final_xml: 
-                    final_xml = escape(full_text)
+                # 4. RENDER
+                if not final_xml: final_xml = escape(full_text)
 
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
                         try:
+                            # Sanitize just in case markers got messed up
                             story.append(Paragraph(paragraph, styles['Normal']))
                         except:
                             clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
@@ -1998,7 +1978,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- FUZZY LEVENSHTEIN RENDERER (For Highly Broken OCR) ---
+            # --- WILDCARD REGEX RENDERER (The "Nuclear" Option) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
@@ -2015,78 +1995,57 @@ def export_pdf_dynamic(report_id):
                 final_xml = ""
                 
                 try:
-                    # PREPARE COORDINATE MAP
-                    clean_text = ""
-                    orig_indices = []
+                    # Markers
+                    MARKER_START = "@@HL_START@@"
+                    MARKER_END = "@@HL_END@@"
                     
-                    for i, char in enumerate(full_text):
-                        if char.isalnum():
-                            clean_text += char.lower()
-                            orig_indices.append(i)
+                    # Copy full text to work on
+                    working_text = full_text
                     
-                    found_intervals = []
-                    
-                    # FUZZY MATCHING LOOP
-                    if matches and clean_text:
+                    # FIND MATCHES WITH WILDCARDS
+                    if matches:
                         matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
-
+                        
+                        count = 0
+                        
                         for match in matches[:60]:
+                            if count > 150: break
+                            
                             segment = (match.get('text_segment', '') or '').strip()
-                            if len(segment) < 10: 
-                                continue
+                            if len(segment) < 8: continue
                             
-                            clean_seg = "".join([c.lower() for c in segment if c.isalnum()])
-                            if not clean_seg: 
+                            # CLEAN SEGMENT TO PURE CHARS
+                            clean_chars = [re.escape(c) for c in segment if c.isalnum()]
+                            if not clean_chars: continue
+                            
+                            # BUILD WILDCARD REGEX
+                            pattern_str = r"[\W_]*".join(clean_chars)
+                            
+                            try:
+                                pattern = re.compile(pattern_str, re.IGNORECASE)
+                                
+                                def replace_with_marker(m):
+                                    m_text = m.group(0)
+                                    if "@@HL" in m_text: 
+                                        return m_text
+                                    return f"{MARKER_START}{m_text}{MARKER_END}"
+
+                                working_text, n = pattern.subn(replace_with_marker, working_text)
+                                count += n
+                                
+                            except Exception:
                                 continue
 
-                            # Use SequenceMatcher
-                            matcher = SequenceMatcher(None, clean_text, clean_seg)
-                            fuzzy_match = matcher.find_longest_match(0, len(clean_text), 0, len(clean_seg))
-                            
-                            if fuzzy_match.size > len(clean_seg) * 0.6:
-                                try:
-                                    start_clean = fuzzy_match.a
-                                    end_clean = fuzzy_match.a + fuzzy_match.size - 1
-                                    
-                                    orig_start = orig_indices[start_clean]
-                                    orig_end = orig_indices[end_clean] + 1
-                                    
-                                    found_intervals.append([orig_start, orig_end])
-                                except IndexError:
-                                    pass
-
-                    # MERGE OVERLAPS
-                    found_intervals.sort(key=lambda x: x[0])
-                    merged_intervals = []
-                    if found_intervals:
-                        current_start, current_end = found_intervals[0]
-                        for next_start, next_end in found_intervals[1:]:
-                            if next_start < current_end:
-                                current_end = max(current_end, next_end)
-                            else:
-                                merged_intervals.append((current_start, current_end))
-                                current_start, current_end = next_start, next_end
-                        merged_intervals.append((current_start, current_end))
-
-                    # APPLY TAGS
-                    text_chars = list(full_text)
-                    for start, end in reversed(merged_intervals):
-                        text_chars.insert(end, "@@HL_END@@")
-                        text_chars.insert(start, "@@HL_START@@")
-                    
-                    raw_result = "".join(text_chars)
-
-                    # ESCAPE & SWAP
-                    safe_text = escape(raw_result)
-                    final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
+                    # ESCAPE AND RENDER
+                    safe_text = escape(working_text)
+                    final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
 
                 except Exception:
-                    logging.exception("PDF FUZZY ERROR")
+                    logging.exception("PDF WILDCARD ERROR")
                     final_xml = escape(full_text)
 
                 # RENDER
-                if not final_xml: 
-                    final_xml = escape(full_text)
+                if not final_xml: final_xml = escape(full_text)
 
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
