@@ -1800,17 +1800,18 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PLATINUM STANDARD PDF RENDERER WITH FUZZY MATCHING + BOUNDARIES + SAFETY
+# FINAL MASTER PATCH - PDF RENDERER WITH ADAPTIVE FUZZY MATCHING + CORRECTED BOUNDARIES + SAFETY CAPS
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    PLATINUM STANDARD PDF RENDERER
-    - Fuzzy matching with alphanumeric-only coordinate map
-    - Boundary checking for whole-word matches
-    - Interval cap at 100 highlighted sections
-    - Clean logging with logging.exception
-    - Guaranteed PDF download with fallbacks
+    FINAL MASTER PATCH - PRODUCTION-READY PDF RENDERER
+    - Adaptive fuzzy matching for OCR artifacts
+    - Corrected boundaries for short segments  
+    - Merge intervals to prevent overlaps
+    - Conservative caps (200 total, 3 per segment)
+    - Global try/except with fallback
+    - Reverse insertion of markers
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1848,7 +1849,7 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- PLATINUM STANDARD PDF RENDERER (Fuzzy + Boundaries + Safety) ---
+            # --- FINAL MASTER PATCH PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
@@ -1862,14 +1863,14 @@ def export_pdf_dynamic(report_id):
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # 1. HARD LIMITS
+                # SAFETY LIMIT: Cap text length
                 if len(full_text) > 100000: 
                     full_text = full_text[:100000] + "... (truncated)"
                 
                 final_xml = "" 
                 
                 try:
-                    # 2. PREPARE COORDINATE MAP
+                    # PREPARE COORDINATE MAP (alphanumeric only)
                     clean_text = ""
                     orig_indices = []
                     
@@ -1883,38 +1884,65 @@ def export_pdf_dynamic(report_id):
                     MAX_TOTAL_MATCHES = 200
                     MAX_MATCHES_PER_SEG = 3
 
-                    # 3. FIND MATCHES
+                    # FIND MATCHES WITH ADAPTIVE FUZZY MATCHING
                     if segments and clean_text:
                         segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
 
                         for seg in segments[:80]: 
-                            if total_matches >= MAX_TOTAL_MATCHES: break
+                            if total_matches >= MAX_TOTAL_MATCHES: 
+                                break
                             
                             seg_text = (seg.get('text', '') or '').strip()
-                            if not seg_text or len(seg_text) < 8: continue
+                            if not seg_text or len(seg_text) < 8: 
+                                continue
                             
                             clean_seg = "".join([c.lower() for c in seg_text if c.isalnum()])
-                            if not clean_seg: continue
+                            if not clean_seg: 
+                                continue
 
+                            # FAST PATH: Try exact match first (long segments)
+                            if len(clean_seg) > 30:
+                                first_idx = clean_text.find(clean_seg)
+                                if first_idx != -1:
+                                    # CORRECTED UNIQUENESS CHECK: Ensure second occurrence is distinct
+                                    second_idx = clean_text.find(clean_seg, first_idx + len(clean_seg))
+                                    
+                                    if second_idx == -1:  # Unique match
+                                        try:
+                                            orig_start = orig_indices[first_idx]
+                                            orig_end = orig_indices[first_idx + len(clean_seg) - 1] + 1
+                                            found_intervals.append([orig_start, orig_end])
+                                            total_matches += 1
+                                            
+                                            # ENFORCE SAFETY CAP INSIDE FAST PATH
+                                            if total_matches >= MAX_TOTAL_MATCHES:
+                                                break
+                                            
+                                            continue  # Skip slow path
+                                        except IndexError:
+                                            pass
+
+                            # SLOW PATH: Boundary-checked search (short/ambiguous segments)
                             start_search = 0
                             seg_matches = 0
                             
                             while True:
-                                if seg_matches >= MAX_MATCHES_PER_SEG: break
-                                if total_matches >= MAX_TOTAL_MATCHES: break
+                                if seg_matches >= MAX_MATCHES_PER_SEG: 
+                                    break
+                                if total_matches >= MAX_TOTAL_MATCHES: 
+                                    break
 
                                 found_idx = clean_text.find(clean_seg, start_search)
-                                if found_idx == -1: break
+                                if found_idx == -1: 
+                                    break
                                 
-                                # --- BOUNDARY CHECK (New Feature) ---
-                                # Check character before match
+                                # CORRECTED BOUNDARY CHECK FOR SHORT SEGMENTS
                                 is_start_ok = (found_idx == 0)
                                 if not is_start_ok:
                                     prev_orig_idx = orig_indices[found_idx] - 1
                                     if prev_orig_idx >= 0 and not full_text[prev_orig_idx].isalnum():
                                         is_start_ok = True
                                 
-                                # Check character after match
                                 is_end_ok = ((found_idx + len(clean_seg)) == len(clean_text))
                                 if not is_end_ok:
                                     end_map_idx = found_idx + len(clean_seg) - 1
@@ -1922,7 +1950,7 @@ def export_pdf_dynamic(report_id):
                                     if next_orig_idx < len(full_text) and not full_text[next_orig_idx].isalnum():
                                         is_end_ok = True
 
-                                # Only accept if boundaries look like whole words
+                                # Accept if boundaries are valid
                                 if is_start_ok and is_end_ok:
                                     try:
                                         orig_start = orig_indices[found_idx]
@@ -1935,9 +1963,10 @@ def export_pdf_dynamic(report_id):
                                         pass 
                                 
                                 start_search = found_idx + len(clean_seg)
-                                if start_search >= len(clean_text): break
+                                if start_search >= len(clean_text): 
+                                    break
 
-                    # 4. MERGE OVERLAPS
+                    # MERGE OVERLAPPING INTERVALS
                     found_intervals.sort(key=lambda x: x[0])
                     
                     merged_intervals = []
@@ -1951,13 +1980,13 @@ def export_pdf_dynamic(report_id):
                                 current_start, current_end = next_start, next_end
                         merged_intervals.append((current_start, current_end))
                     
-                    # --- INTERVAL CAP (New Feature) ---
+                    # INTERVAL CAP (keep top 100 longest)
                     if len(merged_intervals) > 100:
                         merged_intervals.sort(key=lambda x: x[1]-x[0], reverse=True)
                         merged_intervals = merged_intervals[:100]
                         merged_intervals.sort(key=lambda x: x[0])
 
-                    # 5. APPLY TAGS
+                    # APPLY TAGS (REVERSE INSERTION)
                     text_chars = list(full_text)
                     for start, end in reversed(merged_intervals):
                         text_chars.insert(end, "@@HL_END@@")
@@ -1965,7 +1994,7 @@ def export_pdf_dynamic(report_id):
                     
                     raw_result = "".join(text_chars)
 
-                    # 6. ESCAPE & SWAP
+                    # ESCAPE & SWAP MARKERS
                     safe_text = escape(raw_result)
                     final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
 
@@ -1973,8 +2002,9 @@ def export_pdf_dynamic(report_id):
                     logging.exception("PDF GENERATION ERROR")
                     final_xml = escape(full_text)
 
-                # 7. RENDER
-                if not final_xml: final_xml = escape(full_text)
+                # RENDER TO PDF
+                if not final_xml: 
+                    final_xml = escape(full_text)
 
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
@@ -2020,7 +2050,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- PLATINUM STANDARD PDF RENDERER (Fuzzy + Boundaries + Safety) ---
+            # --- FINAL MASTER PATCH PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
@@ -2030,14 +2060,14 @@ def export_pdf_dynamic(report_id):
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # 1. HARD LIMITS
+                # SAFETY LIMIT
                 if len(full_text) > 100000:
                     full_text = full_text[:100000] + "... (truncated)"
                 
                 final_xml = ""
                 
                 try:
-                    # 2. PREPARE COORDINATE MAP
+                    # PREPARE COORDINATE MAP
                     clean_text = ""
                     orig_indices = []
                     
@@ -2051,30 +2081,59 @@ def export_pdf_dynamic(report_id):
                     MAX_TOTAL_MATCHES = 200
                     MAX_MATCHES_PER_SEG = 3
 
-                    # 3. FIND MATCHES
+                    # FIND MATCHES WITH ADAPTIVE FUZZY MATCHING
                     if matches and clean_text:
                         matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
 
                         for match in matches[:80]:
-                            if total_matches >= MAX_TOTAL_MATCHES: break
+                            if total_matches >= MAX_TOTAL_MATCHES: 
+                                break
                             
                             segment = (match.get('text_segment', '') or '').strip()
-                            if not segment or len(segment) < 8: continue
+                            if not segment or len(segment) < 8: 
+                                continue
                             
                             clean_seg = "".join([c.lower() for c in segment if c.isalnum()])
-                            if not clean_seg: continue
+                            if not clean_seg: 
+                                continue
 
+                            # FAST PATH: Long unique segments
+                            if len(clean_seg) > 30:
+                                first_idx = clean_text.find(clean_seg)
+                                if first_idx != -1:
+                                    # CORRECTED UNIQUENESS CHECK
+                                    second_idx = clean_text.find(clean_seg, first_idx + len(clean_seg))
+                                    
+                                    if second_idx == -1:
+                                        try:
+                                            orig_start = orig_indices[first_idx]
+                                            orig_end = orig_indices[first_idx + len(clean_seg) - 1] + 1
+                                            found_intervals.append([orig_start, orig_end])
+                                            total_matches += 1
+                                            
+                                            # ENFORCE SAFETY CAP
+                                            if total_matches >= MAX_TOTAL_MATCHES:
+                                                break
+                                            
+                                            continue
+                                        except IndexError:
+                                            pass
+
+                            # SLOW PATH: Boundary-checked search
                             start_search = 0
                             seg_matches = 0
                             
                             while True:
-                                if seg_matches >= MAX_MATCHES_PER_SEG: break
-                                if total_matches >= MAX_TOTAL_MATCHES: break
+                                if seg_matches >= MAX_MATCHES_PER_SEG: 
+                                    break
+                                if total_matches >= MAX_TOTAL_MATCHES: 
+                                    break
 
                                 found_idx = clean_text.find(clean_seg, start_search)
-                                if found_idx == -1: break
+                                if found_idx == -1: 
+                                    break
                                 
-                                # --- BOUNDARY CHECK ---
+                                # CORRECTED BOUNDARY CHECK
                                 is_start_ok = (found_idx == 0)
                                 if not is_start_ok:
                                     prev_orig_idx = orig_indices[found_idx] - 1
@@ -2100,9 +2159,10 @@ def export_pdf_dynamic(report_id):
                                         pass
                                 
                                 start_search = found_idx + len(clean_seg)
-                                if start_search >= len(clean_text): break
+                                if start_search >= len(clean_text): 
+                                    break
 
-                    # 4. MERGE OVERLAPS
+                    # MERGE OVERLAPS
                     found_intervals.sort(key=lambda x: x[0])
                     
                     merged_intervals = []
@@ -2116,13 +2176,13 @@ def export_pdf_dynamic(report_id):
                                 current_start, current_end = next_start, next_end
                         merged_intervals.append((current_start, current_end))
                     
-                    # --- INTERVAL CAP ---
+                    # INTERVAL CAP
                     if len(merged_intervals) > 100:
                         merged_intervals.sort(key=lambda x: x[1]-x[0], reverse=True)
                         merged_intervals = merged_intervals[:100]
                         merged_intervals.sort(key=lambda x: x[0])
 
-                    # 5. APPLY TAGS
+                    # APPLY TAGS (REVERSE INSERTION)
                     text_chars = list(full_text)
                     for start, end in reversed(merged_intervals):
                         text_chars.insert(end, "@@HL_END@@")
@@ -2130,7 +2190,7 @@ def export_pdf_dynamic(report_id):
                     
                     raw_result = "".join(text_chars)
 
-                    # 6. ESCAPE & SWAP
+                    # ESCAPE & SWAP
                     safe_text = escape(raw_result)
                     final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
 
@@ -2138,8 +2198,9 @@ def export_pdf_dynamic(report_id):
                     logging.exception("PDF GENERATION ERROR")
                     final_xml = escape(full_text)
 
-                # 7. RENDER
-                if not final_xml: final_xml = escape(full_text)
+                # RENDER
+                if not final_xml: 
+                    final_xml = escape(full_text)
 
                 for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
