@@ -21,12 +21,13 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 import io
 import stripe
 import PyPDF2
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.units import inch
 from xml.sax.saxutils import escape
+from difflib import SequenceMatcher
 
 load_dotenv()
 
@@ -1800,15 +1801,16 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# NUCLEAR FIX: WILDCARD REGEX FOR BROKEN TEXT
+# PREMIUM PDF EXPORT WITH HEATMAP HIGHLIGHTING
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    NUCLEAR FIX: Letter-by-Letter Wildcard Regex for Broken Text
-    - Constructs [\W_]* pattern between every character
-    - Matches sequences regardless of ANY intervening spaces/newlines/symbols
-    - Solves zero-highlight issue for severely fragmented OCR PDFs
+    PREMIUM PDF DESIGN WITH HEATMAP HIGHLIGHTING
+    - Professional layout with header, scorecard table, and styled sections
+    - Paragraph-level heatmap instead of word-by-word highlighting
+    - Fuzzy matching to detect suspicious paragraphs even with OCR errors
+    - Clean, beautiful design that works reliably
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1819,252 +1821,196 @@ def export_pdf_dynamic(report_id):
 
     # Setup Buffer and Document
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
     styles = getSampleStyleSheet()
     story = []
 
-    # Title
-    title_style = ParagraphStyle('MainTitle', parent=styles['Heading1'], alignment=1, fontSize=18, spaceAfter=20)
-    story.append(Paragraph(f"📄 {report.title} Report", title_style))
-    story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-    story.append(Spacer(1, 20))
+    # --- CUSTOM STYLES ---
+    # Title Style
+    title_style = ParagraphStyle(
+        'ReportTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor("#2C3E50"),
+        spaceAfter=20,
+        alignment=1  # Center
+    )
+    
+    # Heatmap Style (For suspicious paragraphs)
+    heatmap_paragraph_style = ParagraphStyle(
+        'Heatmap',
+        parent=styles['Normal'],
+        backColor=colors.HexColor("#FFF0F0"),  # Soft Red Background
+        borderColor=colors.HexColor("#FFCCCC"),
+        borderWidth=1,
+        borderPadding=5,
+        spaceAfter=10,
+        leading=14
+    )
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) ---
+    # Normal Style
+    normal_style = ParagraphStyle(
+        'CleanNormal',
+        parent=styles['Normal'],
+        spaceAfter=10,
+        leading=14
+    )
+
+    # --- HEADER & SCORECARD ---
+    report_type = "AI Detection" if report.tool_type == 'ai_check' else "Plagiarism Detection"
+    story.append(Paragraph(f"{report_type.upper()} REPORT", title_style))
+    story.append(Spacer(1, 10))
+    
+    # Parse data
+    try:
+        data = json.loads(report.result_data) if isinstance(report.result_data, str) else report.result_data
+    except:
+        data = {}
+    
+    # Prepare Score Data
     if report.tool_type == 'ai_check':
-        try:
-            # Parse JSON data
-            data = json.loads(report.result_data) if isinstance(report.result_data, str) else report.result_data
-            score = data.get('ai_score', 0)
-            
-            # Score Display
-            score_color = "red" if score > 50 else "green"
-            score_text = f'<font color="{score_color}" size="16"><b>AI Probability: {score}%</b></font>'
-            story.append(Paragraph(score_text, styles['Normal']))
-            story.append(Spacer(1, 10))
-            
-            breakdown = data.get('breakdown', 'N/A')
-            story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
-            story.append(Spacer(1, 20))
-
-            # --- WILDCARD REGEX RENDERER (The "Nuclear" Option) ---
-            story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
-            story.append(Spacer(1, 12))
-
-            full_text = data.get('input_text', '') or ''
-            segments = data.get('segments', []) or []
-
-            # Fallback
-            if not full_text and segments:
-                full_text = " ".join([s.get('text', '') for s in segments])
-
-            if not full_text.strip():
-                story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
-            else:
-                # 1. LIMITS
-                if len(full_text) > 100000: 
-                    full_text = full_text[:100000] + "... (truncated)"
-                
-                final_xml = "" 
-                
-                try:
-                    # Markers
-                    MARKER_START = "@@HL_START@@"
-                    MARKER_END = "@@HL_END@@"
-                    
-                    # Copy full text to work on
-                    working_text = full_text
-                    
-                    # 2. FIND MATCHES WITH WILDCARDS
-                    if segments:
-                        # Sort longest first to capture big phrases before they get broken up
-                        segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
-                        
-                        count = 0
-                        
-                        for seg in segments[:60]: # Limit 60 segments
-                            if count > 150: break # Safety cap
-                            
-                            seg_text = (seg.get('text', '') or '').strip()
-                            if len(seg_text) < 8: continue # Skip noise
-                            
-                            # A. CLEAN SEGMENT TO PURE CHARS
-                            # "Real-World" -> "RealWorld"
-                            clean_chars = [re.escape(c) for c in seg_text if c.isalnum()]
-                            if not clean_chars: continue
-                            
-                            # B. BUILD WILDCARD REGEX
-                            # "RealWorld" -> "R[\W_]*e[\W_]*a[\W_]*l[\W_]*..."
-                            # [\W_]* means "match 0 or more non-alphanumeric chars (spaces, hyphens, newlines)"
-                            pattern_str = r"[\W_]*".join(clean_chars)
-                            
-                            try:
-                                # C. FIND AND REPLACE WITH MARKERS
-                                # We use a compiled regex for speed
-                                pattern = re.compile(pattern_str, re.IGNORECASE)
-                                
-                                # We must be careful not to double-mark. 
-                                # Simplest way in this chaos is direct substitution if not already marked.
-                                # Note: This limits us to non-nested highlights, which is safer anyway.
-                                
-                                def replace_with_marker(match):
-                                    m_text = match.group(0)
-                                    # Avoid replacing if already marked (simple check)
-                                    if "@@HL" in m_text: 
-                                        return m_text
-                                    return f"{MARKER_START}{m_text}{MARKER_END}"
-
-                                working_text, n = pattern.subn(replace_with_marker, working_text)
-                                count += n
-                                
-                            except Exception:
-                                continue
-
-                    # 3. ESCAPE AND RENDER
-                    # Now we escape the text, but our markers are still plain text "@@HL..."
-                    safe_text = escape(working_text)
-                    
-                    # Swap markers for real tags
-                    final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
-
-                except Exception as e:
-                    logging.exception("PDF WILDCARD ERROR")
-                    final_xml = escape(full_text)
-
-                # 4. RENDER
-                if not final_xml: final_xml = escape(full_text)
-
-                for paragraph in final_xml.split('\n'):
-                    if paragraph.strip():
-                        try:
-                            # Sanitize just in case markers got messed up
-                            story.append(Paragraph(paragraph, styles['Normal']))
-                        except:
-                            clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
-                            story.append(Paragraph(clean, styles['Normal']))
-                        story.append(Spacer(1, 8))
-
-        except Exception as e:
-            story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
-
-    # --- LOGIC FOR PLAGIARISM (The Detective) ---
-    elif report.tool_type == 'plagiarism':
-        try:
-            # Parse JSON data
-            data = json.loads(report.result_data)
-            score = data.get('score', 0)
-            
-            # Score Display
-            score_color = "red" if score > 20 else "green"
-            score_text = f'<font color="{score_color}" size="16"><b>Plagiarism Risk: {score}%</b></font>'
-            story.append(Paragraph(score_text, styles['Normal']))
-            story.append(Spacer(1, 20))
-            
-            # Sources List
+        probability = data.get('ai_score', 0)
+        score_label = "AI PROBABILITY"
+    else:
+        probability = data.get('score', 0)
+        score_label = "PLAGIARISM RISK"
+    
+    score_color = colors.red if probability > 50 else (colors.orange if probability > 20 else colors.green)
+    
+    # Create a visual Score Table
+    score_data = [
+        [score_label, f"{probability}%"],
+        ["Date", report.created_at.strftime('%Y-%m-%d %H:%M')]
+    ]
+    
+    if report.tool_type == 'ai_check':
+        breakdown = data.get('breakdown', 'N/A')
+        if breakdown and breakdown != 'N/A':
+            # Parse breakdown like "GPT:85% | Gem:80% | Claude:75%"
+            parts = breakdown.split('|')
+            for part in parts:
+                if ':' in part:
+                    label, value = part.strip().split(':')
+                    score_data.append([f"{label} Score", value])
+    
+    t = Table(score_data, colWidths=[200, 100])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (1, 0), score_color),  # Top row color
+        ('TEXTCOLOR', (0, 0), (1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (1, -1), 12),
+        ('FONTNAME', (0, 0), (1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (1, -1), 8),
+        ('TOPPADDING', (0, 0), (1, -1), 8),
+        ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+    ]))
+    
+    story.append(t)
+    story.append(Spacer(1, 25))
+    
+    # Add sources section for plagiarism reports
+    if report.tool_type == 'plagiarism':
+        sources = data.get('sources', [])
+        if sources:
             story.append(Paragraph("<b>Detected Sources:</b>", styles['Heading3']))
             story.append(Spacer(1, 10))
             
-            sources = data.get('sources', [])
-            if not sources:
-                story.append(Paragraph("No suspicious sources detected.", styles['Normal']))
-            else:
-                for s in sources:
-                    domain = s.get('domain', 'Unknown')
-                    url = s.get('url', '#')
-                    similarity = s.get('similarity', 0)
-                    
-                    source_text = f"• <b>{domain}</b> ({similarity}% match)<br/><i>{url}</i>"
-                    story.append(Paragraph(source_text, styles['Normal']))
-                    story.append(Spacer(1, 8))
+            for s in sources:
+                domain = s.get('domain', 'Unknown')
+                url = s.get('url', '#')
+                similarity = s.get('similarity', 0)
+                
+                source_text = f"• <b>{domain}</b> ({similarity}% match)<br/><i>{url}</i>"
+                story.append(Paragraph(source_text, styles['Normal']))
+                story.append(Spacer(1, 8))
             
             story.append(Spacer(1, 20))
+    
+    story.append(Paragraph("<b>Detailed Text Analysis</b>", styles['Heading2']))
+    story.append(Spacer(1, 10))
+
+    # --- HEATMAP RENDERING ---
+    full_text = data.get('input_text', '') or ''
+    
+    if report.tool_type == 'ai_check':
+        segments = data.get('segments', [])
+    else:  # plagiarism
+        matches = data.get('matches', [])
+        # Convert matches to segments format for unified processing
+        segments = [{'text': m.get('text_segment', ''), 'is_suspicious': True} for m in matches]
+    
+    # Fallback reconstruction
+    if not full_text and segments:
+        full_text = " ".join([s.get('text', '') for s in segments])
+
+    if not full_text.strip():
+        story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
+    else:
+        # Pre-process segments for fuzzy matching
+        clean_segments = []
+        if segments:
+            for s in segments:
+                txt = s.get('text', '').strip()
+                if len(txt) > 15:  # Only keep significant phrases
+                    clean_segments.append("".join(filter(str.isalnum, txt.lower())))
+
+        # Split text into natural paragraphs
+        paragraphs = full_text.split('\n')
+        
+        for para in paragraphs:
+            if not para.strip(): 
+                continue
             
-            # --- WILDCARD REGEX RENDERER (The "Nuclear" Option) ---
-            story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
-            story.append(Spacer(1, 12))
-
-            full_text = data.get('input_text', '') or ''
-            matches = data.get('matches', []) or []
-
-            if not full_text.strip():
-                story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
-            else:
-                # SAFETY LIMIT
-                if len(full_text) > 100000:
-                    full_text = full_text[:100000] + "... (truncated)"
-                
-                final_xml = ""
-                
-                try:
-                    # Markers
-                    MARKER_START = "@@HL_START@@"
-                    MARKER_END = "@@HL_END@@"
-                    
-                    # Copy full text to work on
-                    working_text = full_text
-                    
-                    # FIND MATCHES WITH WILDCARDS
-                    if matches:
-                        matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
-                        
-                        count = 0
-                        
-                        for match in matches[:60]:
-                            if count > 150: break
-                            
-                            segment = (match.get('text_segment', '') or '').strip()
-                            if len(segment) < 8: continue
-                            
-                            # CLEAN SEGMENT TO PURE CHARS
-                            clean_chars = [re.escape(c) for c in segment if c.isalnum()]
-                            if not clean_chars: continue
-                            
-                            # BUILD WILDCARD REGEX
-                            pattern_str = r"[\W_]*".join(clean_chars)
-                            
-                            try:
-                                pattern = re.compile(pattern_str, re.IGNORECASE)
-                                
-                                def replace_with_marker(m):
-                                    m_text = m.group(0)
-                                    if "@@HL" in m_text: 
-                                        return m_text
-                                    return f"{MARKER_START}{m_text}{MARKER_END}"
-
-                                working_text, n = pattern.subn(replace_with_marker, working_text)
-                                count += n
-                                
-                            except Exception:
-                                continue
-
-                    # ESCAPE AND RENDER
-                    safe_text = escape(working_text)
-                    final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
-
-                except Exception:
-                    logging.exception("PDF WILDCARD ERROR")
-                    final_xml = escape(full_text)
-
-                # RENDER
-                if not final_xml: final_xml = escape(full_text)
-
-                for paragraph in final_xml.split('\n'):
-                    if paragraph.strip():
+            # Check if this paragraph contains suspicious content
+            is_suspicious = False
+            
+            # 1. Clean the paragraph
+            clean_para = "".join(filter(str.isalnum, para.lower()))
+            
+            if len(clean_para) > 20:  # Skip tiny lines
+                for seg in clean_segments:
+                    # If a significant chunk of a suspicious segment exists in this paragraph
+                    if seg in clean_para:
+                        is_suspicious = True
+                        break
+                    # Fallback: Fuzzy check if exact match fails (for OCR errors)
+                    if not is_suspicious:
                         try:
-                            story.append(Paragraph(paragraph, styles['Normal']))
+                            matcher = SequenceMatcher(None, clean_para, seg)
+                            if matcher.find_longest_match(0, len(clean_para), 0, len(seg)).size > len(seg) * 0.7:
+                                is_suspicious = True
+                                break
                         except:
-                            clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
-                            story.append(Paragraph(clean, styles['Normal']))
-                        story.append(Spacer(1, 8))
-
-        except Exception as e:
-            story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
+                            pass
+            
+            # Render with appropriate style
+            try:
+                # Escape the paragraph text for safe XML rendering
+                safe_para = escape(para)
+                
+                if is_suspicious:
+                    # Highlight the WHOLE paragraph box
+                    story.append(Paragraph(safe_para, heatmap_paragraph_style))
+                else:
+                    story.append(Paragraph(safe_para, normal_style))
+            except Exception as e:
+                # If paragraph rendering fails, try plain text
+                try:
+                    story.append(Paragraph(para.replace('<', '&lt;').replace('>', '&gt;'), normal_style))
+                except:
+                    pass  # Skip problematic paragraphs
 
     # Build PDF
-    doc.build(story)
-    buffer.seek(0)
-    
-    return Response(buffer, mimetype='application/pdf', 
-                   headers={'Content-Disposition': f'attachment;filename=report_{report.tool_type}_{report_id}.pdf'})
+    try:
+        doc.build(story)
+        buffer.seek(0)
+        
+        return Response(buffer, mimetype='application/pdf', 
+                       headers={'Content-Disposition': f'attachment;filename=report_{report.tool_type}_{report_id}.pdf'})
+    except Exception as e:
+        logging.exception("PDF Build Error")
+        flash(f'Error generating PDF: {str(e)}', 'error')
+        return redirect(url_for('dashboard'))
 
 # --- VIEW REPORT ROUTE (FOR ACCESSING SAVED REPORTS) ---
 @app.route('/view-report/<int:report_id>')
