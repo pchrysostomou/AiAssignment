@@ -4,6 +4,7 @@ import time
 import re
 import requests
 import threading
+import logging
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, flash, Response, stream_with_context, jsonify, session, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -1799,13 +1800,16 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PDF FIX: CORRECTED HIGHLIGHT MATCHING PIPELINE
+# PRODUCTION-READY PDF RENDERER WITH REGEX SAFETY & LIMITS
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    CORRECTED PDF RENDERER WITH PROPER HIGHLIGHT MATCHING
-    Pipeline: Match on RAW text → Escape matched parts → Preserve <font> tags
+    PRODUCTION-READY PDF RENDERER
+    - Uses [ \t]+ instead of \s+ to prevent newline matching
+    - Caps highlighting to top 50 segments and 100k chars
+    - Uses logging instead of print
+    - Maintains try...except for guaranteed PDF download
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1826,7 +1830,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) - CORRECTED MATCHING ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1843,56 +1847,83 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- CORRECTED HIGHLIGHT MATCHING PIPELINE ---
+            # --- PRODUCTION-READY PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
-            
+
+            # 1. Get Raw Data
             full_text = data.get('input_text', '') or ''
             segments = data.get('segments', []) or []
 
-            # Fallback for legacy data
+            # Fallback reconstruction
             if not full_text and segments:
                 full_text = " ".join([s.get('text', '') for s in segments])
 
             if not full_text.strip():
-                story.append(Paragraph("<i>Error: No text content available for this report.</i>", styles['Normal']))
+                story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # STEP 1: Work on RAW text (no escaping yet)
-                raw_text = full_text
-                highlighted = raw_text
+                # SAFETY LIMIT: Cap text length to prevent DoS on huge files
+                if len(full_text) > 100000:
+                    full_text = full_text[:100000] + "... (truncated)"
+                
+                # DEFAULT: Safe plain text (in case highlighting fails)
+                final_xml = escape(full_text)
+                
+                # TRY to apply Highlighting
+                try:
+                    formatted_text = full_text
+                    MARKER_START = "@@HL_START@@"
+                    MARKER_END = "@@HL_END@@"
+                    
+                    if segments:
+                        # Sort longest first
+                        segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
+                        
+                        # PERFORMANCE LIMIT: Only process top 50 longest segments
+                        # This prevents infinite loops on fragmented data
+                        for seg in segments[:50]:
+                            text_part = (seg.get('text', '') or '').strip()
+                            if not text_part: continue
+                            if len(text_part) < 5 or len(text_part) > 1000: continue # Skip noise & huge blocks
 
-                if segments:
-                    segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
+                            # REGEX FIX: Use [ \t]+ instead of \s+
+                            # We MUST NOT match newlines, otherwise split('\n') later will break the tags.
+                            pattern_str = re.escape(text_part).replace(r'\ ', r'[ \t]+')
+                            
+                            try:
+                                pattern = re.compile(pattern_str, re.IGNORECASE)
+                                # Apply markers (NOT XML tags yet)
+                                formatted_text = pattern.sub(
+                                    lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
+                                    formatted_text
+                                )
+                            except Exception:
+                                continue
+                    
+                    # Verify markers exist
+                    if MARKER_START in formatted_text:
+                        # Escape everything (markers become safe text)
+                        safe_text = escape(formatted_text)
+                        # Swap markers for real XML tags
+                        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+                    else:
+                        final_xml = escape(full_text)
 
-                    for seg in segments:
-                        text_part = (seg.get('text','') or '').strip()
-                        if not text_part or len(text_part) > 800:
-                            continue
+                except Exception as e:
+                    # Log error properly and fallback
+                    logging.error(f"PDF HIGHLIGHT CRASH: {str(e)}")
+                    final_xml = escape(full_text)
 
-                        # STEP 2: Create flexible regex pattern
-                        pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
-
+                # 4. RENDER
+                # Safe split by newline. Since regex didn't touch newlines, tags are safe.
+                for paragraph in final_xml.split('\n'):
+                    if paragraph.strip():
                         try:
-                            pattern = re.compile(pattern_str, re.IGNORECASE)
-                            # STEP 3: Replace with highlighted version (escape the matched text)
-                            highlighted = pattern.sub(
-                                lambda m: f'<font backColor="#FFCCCC">{escape(m.group(0))}</font>',
-                                highlighted
-                            )
-                        except re.error:
-                            continue
-
-                # STEP 4: Escape the rest (but preserve <font> tags)
-                safe_output = escape(highlighted).replace(
-                    '&lt;font backColor="#FFCCCC"&gt;', '<font backColor="#FFCCCC">'
-                ).replace(
-                    '&lt;/font&gt;', '</font>'
-                )
-
-                # STEP 5: Render paragraphs
-                for para in safe_output.split('\n'):
-                    if para.strip():
-                        story.append(Paragraph(para, styles['Normal']))
+                            story.append(Paragraph(paragraph, styles['Normal']))
+                        except Exception as e:
+                            # Ultra-fallback: Strip tags if Paragraph crashes
+                            clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
+                            story.append(Paragraph(clean, styles['Normal']))
                         story.append(Spacer(1, 8))
 
         except Exception as e:
@@ -1930,78 +1961,95 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- CORRECTED HIGHLIGHT MATCHING PIPELINE ---
+            # --- PRODUCTION-READY PDF RENDERER ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
-            
-            matches = data.get('matches', [])
-            full_text = data.get('input_text', '')
-            
-            if not full_text:
-                story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
+
+            # 1. Get Raw Data
+            full_text = data.get('input_text', '') or ''
+            matches = data.get('matches', []) or []
+
+            if not full_text.strip():
+                story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
-                # STEP 1: Work on RAW text
-                raw_text = full_text
-                highlighted = raw_text
+                # SAFETY LIMIT: Cap text length to prevent DoS on huge files
+                if len(full_text) > 100000:
+                    full_text = full_text[:100000] + "... (truncated)"
                 
-                # Sort matches by length (longest first)
-                matches.sort(key=lambda x: len(x.get('text_segment', '')), reverse=True)
+                # DEFAULT: Safe plain text (in case highlighting fails)
+                final_xml = escape(full_text)
                 
-                for match in matches:
-                    segment = (match.get('text_segment', '') or '').strip()
-                    source_id = match.get('source_id', 0)
+                # TRY to apply Highlighting
+                try:
+                    formatted_text = full_text
+                    MARKER_START = "@@HL_START@@"
+                    MARKER_END = "@@HL_END@@"
                     
-                    if not segment or len(segment) > 800:
-                        continue
+                    if matches:
+                        # Sort longest first
+                        matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
+                        
+                        # PERFORMANCE LIMIT: Only process top 50 longest matches
+                        for match in matches[:50]:
+                            segment = (match.get('text_segment', '') or '').strip()
+                            if not segment: continue
+                            if len(segment) < 5 or len(segment) > 1000: continue # Skip noise & huge blocks
+                            
+                            source_id = match.get('source_id', 0)
+                            
+                            # Find source info
+                            source = next((s for s in sources if s.get('id') == source_id), None)
+                            if source:
+                                similarity = source.get('similarity', 0)
+                                domain = source.get('domain', 'Unknown')
+                                
+                                # Determine prefix
+                                if similarity > 50:
+                                    prefix = f'🔴 HIGH RISK ({similarity}% - {domain}): '
+                                elif similarity > 20:
+                                    prefix = f'🟠 Possible Match ({similarity}% - {domain}): '
+                                else:
+                                    prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
+                                
+                                # REGEX FIX: Use [ \t]+ instead of \s+
+                                pattern_str = re.escape(segment).replace(r'\ ', r'[ \t]+')
+                                
+                                try:
+                                    pattern = re.compile(pattern_str, re.IGNORECASE)
+                                    # Apply markers with prefix
+                                    formatted_text = pattern.sub(
+                                        lambda m: f"{MARKER_START}{prefix}{m.group(0)}{MARKER_END}",
+                                        formatted_text
+                                    )
+                                except Exception:
+                                    continue
                     
-                    # Find source info
-                    source = next((s for s in sources if s.get('id') == source_id), None)
-                    if source:
-                        similarity = source.get('similarity', 0)
-                        domain = source.get('domain', 'Unknown')
-                        
-                        # Determine color
-                        if similarity > 50:
-                            bg_color = "#FFCCCC"  # Red
-                            prefix = f'🔴 HIGH RISK ({similarity}% - {domain}): '
-                        elif similarity > 20:
-                            bg_color = "#FFEB99"  # Orange
-                            prefix = f'🟠 Possible Match ({similarity}% - {domain}): '
-                        else:
-                            bg_color = "#FFFFCC"  # Yellow
-                            prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
-                        
-                        # STEP 2: Create flexible regex pattern
-                        pattern_str = re.escape(segment).replace(r'\ ', r'\s+')
-                        
-                        try:
-                            pattern = re.compile(pattern_str, re.IGNORECASE)
-                            # STEP 3: Replace with highlighted version (escape the matched text)
-                            highlighted = pattern.sub(
-                                lambda m: f'<font backColor="{bg_color}">{escape(prefix + m.group(0))}</font>',
-                                highlighted
-                            )
-                        except re.error:
-                            pass
-                
-                # STEP 4: Escape the rest (but preserve <font> tags)
-                safe_output = escape(highlighted)
-                # Unescape font tags
-                safe_output = re.sub(
-                    r'&lt;font backColor="([^"]+)"&gt;',
-                    r'<font backColor="\1">',
-                    safe_output
-                )
-                safe_output = safe_output.replace('&lt;/font&gt;', '</font>')
-                
-                # STEP 5: Render paragraphs
-                for paragraph in safe_output.split('\n'):
+                    # Verify markers exist
+                    if MARKER_START in formatted_text:
+                        # Escape everything (markers become safe text)
+                        safe_text = escape(formatted_text)
+                        # Swap markers for real XML tags (color based on prefix)
+                        # For simplicity, use one color for all matches
+                        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+                    else:
+                        final_xml = escape(full_text)
+
+                except Exception as e:
+                    # Log error properly and fallback
+                    logging.error(f"PDF HIGHLIGHT CRASH: {str(e)}")
+                    final_xml = escape(full_text)
+
+                # 4. RENDER
+                # Safe split by newline. Since regex didn't touch newlines, tags are safe.
+                for paragraph in final_xml.split('\n'):
                     if paragraph.strip():
                         try:
                             story.append(Paragraph(paragraph, styles['Normal']))
-                            story.append(Spacer(1, 8))
-                        except:
-                            story.append(Paragraph(paragraph, styles['Normal']))
+                        except Exception as e:
+                            # Ultra-fallback: Strip tags if Paragraph crashes
+                            clean = paragraph.replace('<font backColor="#FFCCCC">', '').replace('</font>', '')
+                            story.append(Paragraph(clean, styles['Normal']))
+                        story.append(Spacer(1, 8))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
