@@ -1801,17 +1801,16 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PREMIUM PDF EXPORT WITH HEATMAP HIGHLIGHTING - UPDATED THRESHOLD TO 40%
+# PLACEHOLDER STRATEGY PDF EXPORT - HIGHLIGHT EVERYTHING
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    PREMIUM PDF DESIGN WITH HEATMAP HIGHLIGHTING
-    - Professional layout with header, scorecard table, and styled sections
-    - Paragraph-level heatmap instead of word-by-word highlighting
-    - UPDATED: Lowered threshold from 75% to 40% to catch medium-risk papers (e.g., 50% AI score)
-    - Fuzzy matching to detect suspicious paragraphs even with OCR errors
-    - Clean, beautiful design that works reliably
+    PLACEHOLDER STRATEGY: "Highlight Everything" Implementation
+    - NO thresholds or safety margins
+    - Separates Regex matching (raw text) from XML escaping (ReportLab)
+    - Prevents &amp; corruption by using placeholder markers
+    - Increased limit to 2000 chars to capture large paragraphs
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1827,46 +1826,13 @@ def export_pdf_dynamic(report_id):
     story = []
 
     # --- CUSTOM STYLES ---
-    # Title Style
     title_style = ParagraphStyle(
         'ReportTitle',
         parent=styles['Heading1'],
         fontSize=24,
         textColor=colors.HexColor("#2C3E50"),
         spaceAfter=20,
-        alignment=1  # Center
-    )
-    
-    # Heatmap Style - High Risk (Red)
-    heatmap_high_style = ParagraphStyle(
-        'HeatmapHigh',
-        parent=styles['Normal'],
-        backColor=colors.HexColor("#FFF0F0"),  # Soft Red Background
-        borderColor=colors.HexColor("#FFCCCC"),
-        borderWidth=1,
-        borderPadding=5,
-        spaceAfter=10,
-        leading=14
-    )
-    
-    # Heatmap Style - Medium Risk (Yellow)
-    heatmap_med_style = ParagraphStyle(
-        'HeatmapMed',
-        parent=styles['Normal'],
-        backColor=colors.HexColor("#FFFBF0"),  # Soft Yellow Background
-        borderColor=colors.HexColor("#FFE5B4"),
-        borderWidth=1,
-        borderPadding=5,
-        spaceAfter=10,
-        leading=14
-    )
-
-    # Normal Style
-    normal_style = ParagraphStyle(
-        'CleanNormal',
-        parent=styles['Normal'],
-        spaceAfter=10,
-        leading=14
+        alignment=1
     )
 
     # --- HEADER & SCORECARD ---
@@ -1890,7 +1856,6 @@ def export_pdf_dynamic(report_id):
     
     score_color = colors.red if probability > 50 else (colors.orange if probability > 20 else colors.green)
     
-    # Create a visual Score Table
     score_data = [
         [score_label, f"{probability}%"],
         ["Date", report.created_at.strftime('%Y-%m-%d %H:%M')]
@@ -1899,7 +1864,6 @@ def export_pdf_dynamic(report_id):
     if report.tool_type == 'ai_check':
         breakdown = data.get('breakdown', 'N/A')
         if breakdown and breakdown != 'N/A':
-            # Parse breakdown like "GPT:85% | Gem:80% | Claude:75%"
             parts = breakdown.split('|')
             for part in parts:
                 if ':' in part:
@@ -1908,7 +1872,7 @@ def export_pdf_dynamic(report_id):
     
     t = Table(score_data, colWidths=[200, 100])
     t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (1, 0), score_color),  # Top row color
+        ('BACKGROUND', (0, 0), (1, 0), score_color),
         ('TEXTCOLOR', (0, 0), (1, 0), colors.white),
         ('FONTSIZE', (0, 0), (1, -1), 12),
         ('FONTNAME', (0, 0), (1, 0), 'Helvetica-Bold'),
@@ -1939,100 +1903,73 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
     
-    story.append(Paragraph("<b>Detailed Text Analysis</b>", styles['Heading2']))
-    story.append(Spacer(1, 10))
+    # --- FINAL ROBUST PDF RENDERER (Placeholder Strategy) ---
+    story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
+    story.append(Spacer(1, 12))
 
-    # --- HEATMAP RENDERING WITH UPDATED 40% THRESHOLD ---
+    # 1. Get Raw Data
     full_text = data.get('input_text', '') or ''
-    
-    if report.tool_type == 'ai_check':
-        segments = data.get('segments', [])
-    else:  # plagiarism
-        matches = data.get('matches', [])
-        # Convert matches to segments format for unified processing
-        segments = [{'text': m.get('text_segment', ''), 'is_suspicious': True} for m in matches]
-    
-    # Fallback reconstruction
+    segments = data.get('segments', []) or []
+
+    # Fallback: Reconstruct text if missing
     if not full_text and segments:
         full_text = " ".join([s.get('text', '') for s in segments])
 
     if not full_text.strip():
         story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
     else:
-        # Pre-process segments for fuzzy matching
-        clean_segments = []
+        # Work on RAW text first (Matches better than escaped text)
+        formatted_text = full_text
+        
+        # Define Unique Markers (Safe from escape)
+        MARKER_START = "@@HL_START@@"
+        MARKER_END = "@@HL_END@@"
+
         if segments:
-            for s in segments:
-                txt = s.get('text', '').strip()
-                if len(txt) > 15:  # Only keep significant phrases
-                    clean_segments.append("".join(filter(str.isalnum, txt.lower())))
+            # Sort longest first to prioritize big chunks
+            segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
 
-        # --- UPDATED THRESHOLD LOGIC ---
-        # OLD: probability > 75 (Too strict, missed the 50% case)
-        # NEW: probability > 40 (Catches medium-risk papers too)
-        high_risk_mode = (probability > 40)
-        
-        print(f"🔍 PDF Heatmap Mode: {'HIGH RISK (>40%)' if high_risk_mode else 'STANDARD'} - Score: {probability}%")
+            for seg in segments:
+                text_part = (seg.get('text', '') or '').strip()
+                if not text_part: 
+                    continue
+                
+                # USER DEMAND: HIGHLIGHT EVERYTHING.
+                # Increased guardrail to 2000 chars to capture large paragraphs.
+                if len(text_part) > 2000: 
+                    continue 
 
-        # Split text into natural paragraphs
-        paragraphs = full_text.split('\n')
-        
-        for para in paragraphs:
-            if not para.strip(): 
-                continue
-            
-            # Check if this paragraph contains suspicious content
-            is_suspicious = False
-            highlight_style = heatmap_med_style  # Default to medium risk (yellow)
-            
-            # Method A: Heatmap Override (For scores > 40%)
-            if high_risk_mode:
-                # If paragraph is substantial (>60 chars), mark it as suspicious
-                if len(para) > 60:
-                    is_suspicious = True
-                    # Use RED if score is very high (>70), else YELLOW
-                    if probability > 70:
-                        highlight_style = heatmap_high_style
-                    else:
-                        highlight_style = heatmap_med_style
-            
-            # Method B: Standard Matching (For scores < 40%)
-            else:
-                # 1. Clean the paragraph
-                clean_para = "".join(filter(str.isalnum, para.lower()))
+                # Flexible Regex on RAW text (Ignore whitespace diffs)
+                pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
                 
-                if len(clean_para) > 20:  # Skip tiny lines
-                    for seg in clean_segments:
-                        # If a significant chunk of a suspicious segment exists in this paragraph
-                        if seg in clean_para:
-                            is_suspicious = True
-                            break
-                        # Fallback: Fuzzy check if exact match fails (for OCR errors)
-                        if not is_suspicious:
-                            try:
-                                matcher = SequenceMatcher(None, clean_para, seg)
-                                if matcher.find_longest_match(0, len(clean_para), 0, len(seg)).size > len(seg) * 0.7:
-                                    is_suspicious = True
-                                    break
-                            except:
-                                pass
-            
-            # Render with appropriate style
-            try:
-                # Escape the paragraph text for safe XML rendering
-                safe_para = escape(para)
-                
-                if is_suspicious:
-                    # Highlight the WHOLE paragraph box
-                    story.append(Paragraph(safe_para, highlight_style))
-                else:
-                    story.append(Paragraph(safe_para, normal_style))
-            except Exception as e:
-                # If paragraph rendering fails, try plain text
                 try:
-                    story.append(Paragraph(para.replace('<', '&lt;').replace('>', '&gt;'), normal_style))
+                    pattern = re.compile(pattern_str, re.IGNORECASE)
+                    # Wrap match in markers (NOT HTML tags yet)
+                    formatted_text = pattern.sub(
+                        lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
+                        formatted_text
+                    )
                 except:
-                    pass  # Skip problematic paragraphs
+                    continue
+
+        # 2. ESCAPE THE WHOLE STRING (Safety Step)
+        # This turns "&" -> "&amp;", "<" -> "&lt;" globally.
+        # Markers like "@@HL_START@@" remain safe.
+        safe_text = escape(formatted_text)
+
+        # 3. SWAP MARKERS FOR REAL TAGS (Render Step)
+        # Inject ReportLab tags into the safe text
+        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+
+        # 4. RENDER
+        for paragraph in final_xml.split('\n'):
+            if paragraph.strip():
+                try:
+                    story.append(Paragraph(paragraph, styles['Normal']))
+                except:
+                    # Fallback for extreme edge cases
+                    story.append(Paragraph(escape(paragraph), styles['Normal']))
+                story.append(Spacer(1, 8))
 
     # Build PDF
     try:
