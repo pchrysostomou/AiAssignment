@@ -27,7 +27,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.lib.units import inch
 from xml.sax.saxutils import escape
-from difflib import SequenceMatcher  # FUZZY MATCHING IMPORT
+from difflib import SequenceMatcher  # CRITICAL IMPORT
 
 load_dotenv()
 
@@ -1801,15 +1801,16 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# HOTFIX: FUZZY LEVENSHTEIN MATCHING FOR BROKEN OCR
+# HOTFIX: FUZZY LEVENSHTEIN MATCHING WITH 60% THRESHOLD FOR HIGHLY BROKEN OCR
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    HOTFIX: FUZZY LEVENSHTEIN RENDERER FOR BAD OCR
+    HOTFIX: FUZZY LEVENSHTEIN RENDERER WITH 60% THRESHOLD FOR HIGHLY BROKEN OCR
     - Uses difflib.SequenceMatcher for fuzzy matching
     - Handles severely fragmented text (e.g., "writ ten", "generali ze", "real - world")
-    - Accepts matches with >80% similarity ratio
+    - Accepts matches with >60% similarity ratio (lowered from 80% to handle worse OCR)
+    - Caps at 60 segments to prevent timeout
     - Solves zero-highlight issue for OCR-distorted PDFs
     """
     report = Report.query.get_or_404(report_id)
@@ -1848,28 +1849,33 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- FUZZY LEVENSHTEIN RENDERER (For Bad OCR) ---
+            # --- FUZZY LEVENSHTEIN RENDERER (For Highly Broken OCR) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
             full_text = data.get('input_text', '') or ''
             segments = data.get('segments', []) or []
 
+            # Fallback reconstruction
             if not full_text and segments:
                 full_text = " ".join([s.get('text', '') for s in segments])
 
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
+                # 1. HARD LIMITS
                 if len(full_text) > 100000: 
                     full_text = full_text[:100000] + "... (truncated)"
                 
                 final_xml = "" 
                 
                 try:
-                    # 1. Clean the full text for matching context
+                    # 2. PREPARE COORDINATE MAP
+                    # Map clean_index -> original_index
                     clean_text = ""
                     orig_indices = []
+                    
+                    # We strip everything except alphanumerics to give the matcher a chance
                     for i, char in enumerate(full_text):
                         if char.isalnum(): 
                             clean_text += char.lower()
@@ -1877,26 +1883,32 @@ def export_pdf_dynamic(report_id):
                     
                     found_intervals = []
                     
-                    # 2. FUZZY MATCHING LOOP
+                    # 3. FUZZY MATCHING LOOP
                     if segments and clean_text:
+                        # Sort longest first to anchor the big chunks
                         segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
 
-                        for seg in segments[:80]:
+                        # Cap at top 60 segments to prevent timeouts (SequenceMatcher is heavy)
+                        for seg in segments[:60]: 
                             seg_text = (seg.get('text', '') or '').strip()
                             if len(seg_text) < 10: 
-                                continue
+                                continue # Skip short noise
                             
-                            # Clean the segment
+                            # Clean the segment target
                             clean_seg = "".join([c.lower() for c in seg_text if c.isalnum()])
                             if not clean_seg: 
                                 continue
 
-                            # Use SequenceMatcher to find the best match in the WHOLE text
+                            # THE MAGIC: Find longest fuzzy match
+                            # This finds where clean_seg fits into clean_text, allowing for errors
                             matcher = SequenceMatcher(None, clean_text, clean_seg)
+                            
+                            # We look for a match that is reasonably long
                             match = matcher.find_longest_match(0, len(clean_text), 0, len(clean_seg))
                             
-                            # If we found a match that covers most of the segment length (>80% match ratio)
-                            if match.size > len(clean_seg) * 0.8:
+                            # LOGIC: If the match covers > 60% of the segment, accept it.
+                            # We use 60% because "writ ten" breaks might reduce the contiguous block size.
+                            if match.size > len(clean_seg) * 0.6:
                                 try:
                                     # Map back to original indices
                                     start_clean = match.a
@@ -1909,7 +1921,7 @@ def export_pdf_dynamic(report_id):
                                 except IndexError:
                                     pass
 
-                    # 3. MERGE OVERLAPS
+                    # 4. MERGE OVERLAPS
                     found_intervals.sort(key=lambda x: x[0])
                     merged_intervals = []
                     if found_intervals:
@@ -1922,7 +1934,7 @@ def export_pdf_dynamic(report_id):
                                 current_start, current_end = next_start, next_end
                         merged_intervals.append((current_start, current_end))
 
-                    # 4. APPLY TAGS
+                    # 5. APPLY TAGS
                     text_chars = list(full_text)
                     for start, end in reversed(merged_intervals):
                         text_chars.insert(end, "@@HL_END@@")
@@ -1930,7 +1942,7 @@ def export_pdf_dynamic(report_id):
                     
                     raw_result = "".join(text_chars)
 
-                    # 5. ESCAPE & RENDER
+                    # 6. ESCAPE & SWAP
                     safe_text = escape(raw_result)
                     final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
 
@@ -1938,6 +1950,7 @@ def export_pdf_dynamic(report_id):
                     logging.exception("PDF FUZZY ERROR")
                     final_xml = escape(full_text)
 
+                # 7. RENDER
                 if not final_xml: 
                     final_xml = escape(full_text)
 
@@ -1985,7 +1998,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- FUZZY LEVENSHTEIN RENDERER (For Bad OCR) ---
+            # --- FUZZY LEVENSHTEIN RENDERER (For Highly Broken OCR) ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
 
@@ -1995,15 +2008,17 @@ def export_pdf_dynamic(report_id):
             if not full_text.strip():
                 story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
             else:
+                # SAFETY LIMIT
                 if len(full_text) > 100000:
                     full_text = full_text[:100000] + "... (truncated)"
                 
                 final_xml = ""
                 
                 try:
-                    # 1. Clean the full text
+                    # PREPARE COORDINATE MAP
                     clean_text = ""
                     orig_indices = []
+                    
                     for i, char in enumerate(full_text):
                         if char.isalnum():
                             clean_text += char.lower()
@@ -2011,11 +2026,11 @@ def export_pdf_dynamic(report_id):
                     
                     found_intervals = []
                     
-                    # 2. FUZZY MATCHING LOOP
+                    # FUZZY MATCHING LOOP
                     if matches and clean_text:
                         matches.sort(key=lambda x: len(x.get('text_segment','') or ''), reverse=True)
 
-                        for match in matches[:80]:
+                        for match in matches[:60]:
                             segment = (match.get('text_segment', '') or '').strip()
                             if len(segment) < 10: 
                                 continue
@@ -2028,7 +2043,7 @@ def export_pdf_dynamic(report_id):
                             matcher = SequenceMatcher(None, clean_text, clean_seg)
                             fuzzy_match = matcher.find_longest_match(0, len(clean_text), 0, len(clean_seg))
                             
-                            if fuzzy_match.size > len(clean_seg) * 0.8:
+                            if fuzzy_match.size > len(clean_seg) * 0.6:
                                 try:
                                     start_clean = fuzzy_match.a
                                     end_clean = fuzzy_match.a + fuzzy_match.size - 1
@@ -2040,7 +2055,7 @@ def export_pdf_dynamic(report_id):
                                 except IndexError:
                                     pass
 
-                    # 3. MERGE OVERLAPS
+                    # MERGE OVERLAPS
                     found_intervals.sort(key=lambda x: x[0])
                     merged_intervals = []
                     if found_intervals:
@@ -2053,7 +2068,7 @@ def export_pdf_dynamic(report_id):
                                 current_start, current_end = next_start, next_end
                         merged_intervals.append((current_start, current_end))
 
-                    # 4. APPLY TAGS
+                    # APPLY TAGS
                     text_chars = list(full_text)
                     for start, end in reversed(merged_intervals):
                         text_chars.insert(end, "@@HL_END@@")
@@ -2061,7 +2076,7 @@ def export_pdf_dynamic(report_id):
                     
                     raw_result = "".join(text_chars)
 
-                    # 5. ESCAPE & RENDER
+                    # ESCAPE & SWAP
                     safe_text = escape(raw_result)
                     final_xml = safe_text.replace("@@HL_START@@", '<font backColor="#FFCCCC">').replace("@@HL_END@@", '</font>')
 
@@ -2069,6 +2084,7 @@ def export_pdf_dynamic(report_id):
                     logging.exception("PDF FUZZY ERROR")
                     final_xml = escape(full_text)
 
+                # RENDER
                 if not final_xml: 
                     final_xml = escape(full_text)
 
