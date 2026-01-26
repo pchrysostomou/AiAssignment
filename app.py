@@ -25,6 +25,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.lib.units import inch
+from xml.sax.saxutils import escape
 
 load_dotenv()
 
@@ -1798,15 +1799,14 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PDF FIX: REGEX FLEXIBLE MATCHING FOR HIGHLIGHTS
+# PDF FIX: FAIL-SAFE RENDERING - ALWAYS SHOW FULL TEXT
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    UNIFIED DYNAMIC PDF GENERATOR - REGEX FLEXIBLE MATCHING
-    Uses regex patterns with \s+ to match text even when whitespace differs
-    (newlines, tabs, multiple spaces) between source and AI-detected segments.
-    Guarantees higher highlight success rate for high AI scores.
+    FAIL-SAFE PDF RENDERER - ALWAYS DISPLAYS FULL TEXT
+    User Requirement: PDF must NEVER be blank. Full text always rendered.
+    If segments exist, highlight them. If not, show plain text.
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1827,7 +1827,7 @@ def export_pdf_dynamic(report_id):
     story.append(Paragraph(f"Date: {report.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 20))
 
-    # --- LOGIC FOR AI DETECTOR (The Oracle) - REGEX ROBUST HIGHLIGHTING ---
+    # --- LOGIC FOR AI DETECTOR (The Oracle) - FAIL-SAFE RENDERING ---
     if report.tool_type == 'ai_check':
         try:
             # Parse JSON data
@@ -1844,63 +1844,53 @@ def export_pdf_dynamic(report_id):
             story.append(Paragraph(f"<b>Breakdown:</b> {breakdown}", styles['Normal']))
             story.append(Spacer(1, 20))
 
-            # --- REGEX ROBUST HIGHLIGHTING ---
+            # --- FAIL-SAFE TEXT RENDERING ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
-            # 1. Prepare Data
-            full_text = data.get('input_text', '')
-            segments = data.get('segments', [])
-            
-            # Fail-Safe: If full_text is missing, reconstruct it
+            full_text = data.get('input_text', '') or ''
+            segments = data.get('segments', []) or []
+
+            # Fallback for legacy data
             if not full_text and segments:
                 full_text = " ".join([s.get('text', '') for s in segments])
-            
-            if not full_text:
-                story.append(Paragraph("<i>Error: No text content found in report data.</i>", styles['Italic']))
+
+            if not full_text.strip():
+                story.append(Paragraph("<i>Error: No text content available for this report.</i>", styles['Normal']))
             else:
-                formatted_text = full_text
-                
+                # Escape to avoid ReportLab markup crashes
+                safe_text = escape(full_text)
+                formatted_text = safe_text
+
                 if segments:
-                    # Sort longest to shortest
-                    segments.sort(key=lambda x: len(x.get('text', '')), reverse=True)
-                    
+                    segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
+
                     for seg in segments:
-                        text_part = seg.get('text', '').strip()
+                        text_part = (seg.get('text','') or '').strip()
                         if not text_part:
                             continue
-                        
-                        # USER REQUIREMENT: FORCE RED FOR ANY DETECTION
-                        bg_color = "#FFCCCC"
 
-                        # CREATE FLEXIBLE PATTERN
-                        # 1. Escape special regex chars in the text
-                        # 2. Replace spaces with \s+ to match newlines/tabs/multiple spaces
-                        pattern_str = re.escape(text_part).replace(r'\ ', r'\s+')
-                        
+                        # Avoid catastrophic regex on huge segments
+                        if len(text_part) > 800:
+                            continue
+
+                        safe_part = escape(text_part)
+                        pattern_str = re.escape(safe_part).replace(r'\ ', r'\s+')
+
                         try:
-                            # Compile regex (Ignore Case for better matching)
                             pattern = re.compile(pattern_str, re.IGNORECASE)
-                            
-                            # SUBSTITUTE WITH HIGHLIGHT
-                            # We use lambda m: ... m.group(0) to preserve the original text's casing/spacing
                             formatted_text = pattern.sub(
-                                lambda m: f'<font backColor="{bg_color}">{m.group(0)}</font>', 
+                                lambda m: f'<font backColor="#FFCCCC">{m.group(0)}</font>',
                                 formatted_text
                             )
-                        except Exception as e:
-                            # Fallback if regex fails (rare)
-                            pass
+                        except re.error:
+                            continue
 
-                # 3. Final Render
-                # Split by newlines to preserve paragraphs
-                for paragraph in formatted_text.split('\n'):
-                    if paragraph.strip():
-                        try:
-                            story.append(Paragraph(paragraph, styles['Normal']))
-                            story.append(Spacer(1, 8))
-                        except:
-                            pass
+                # Render final text (always executes)
+                for para in formatted_text.split('\n'):
+                    if para.strip():
+                        story.append(Paragraph(para, styles['Normal']))
+                        story.append(Spacer(1, 8))
 
         except Exception as e:
             story.append(Paragraph(f"Error parsing data: {str(e)}", styles['Normal']))
@@ -1937,7 +1927,7 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
             
-            # --- REGEX ROBUST HIGHLIGHTING FOR PLAGIARISM ---
+            # --- FAIL-SAFE TEXT RENDERING ---
             story.append(Paragraph("<b>Full Text Analysis:</b>", styles['Heading3']))
             story.append(Spacer(1, 12))
             
@@ -1948,16 +1938,17 @@ def export_pdf_dynamic(report_id):
                 story.append(Paragraph("<i>(Original text content not found in report data)</i>", styles['Italic']))
             else:
                 # Apply highlights using regex
-                formatted_text = full_text
+                safe_text = escape(full_text)
+                formatted_text = safe_text
                 
                 # Sort matches by length (longest first)
                 matches.sort(key=lambda x: len(x.get('text_segment', '')), reverse=True)
                 
                 for match in matches:
-                    segment = match.get('text_segment', '').strip()
+                    segment = (match.get('text_segment', '') or '').strip()
                     source_id = match.get('source_id', 0)
                     
-                    if not segment:
+                    if not segment or len(segment) > 800:
                         continue
                     
                     # Find source info
@@ -1978,13 +1969,14 @@ def export_pdf_dynamic(report_id):
                             prefix = f'🟢 Low Risk ({similarity}% - {domain}): '
                         
                         # Create flexible regex pattern
-                        pattern_str = re.escape(segment).replace(r'\ ', r'\s+')
+                        safe_segment = escape(segment)
+                        pattern_str = re.escape(safe_segment).replace(r'\ ', r'\s+')
                         
                         try:
                             pattern = re.compile(pattern_str, re.IGNORECASE)
                             highlighted_segment = f'<font backColor="{bg_color}">{prefix}\\g<0></font>'
                             formatted_text = pattern.sub(highlighted_segment, formatted_text)
-                        except:
+                        except re.error:
                             pass
                 
                 # Render the final text
