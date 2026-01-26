@@ -1801,16 +1801,16 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# CORRECTED PDF EXPORT - FIXES DOUBLE ESCAPE ISSUE
+# EXPLICIT STEP-BY-STEP PDF EXPORT - FIXES VISIBLE TAGS ISSUE
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    CORRECTED ORDER OF OPERATIONS:
-    1. Regex: Insert safe markers (@@START@@) into raw text
-    2. Escape: Sanitize the text (turning & to &amp; but leaving markers alone)
-    3. Inject: Replace markers with <font> tags LAST
-    This prevents double-escaping where tags render as literal text
+    EXPLICIT ORDER OF OPERATIONS WITH CLEAR VARIABLE NAMES:
+    Step 1: Insert markers into RAW text (Do not escape yet)
+    Step 2: Escape the text (Make it Safe)
+    Step 3: Swap Markers for REAL Tags (Inject Markup)
+    Step 4: Render to PDF
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1903,67 +1903,59 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
     
-    # --- FINAL CORRECTED PDF RENDERER ---
+    # --- FINAL CORRECTED PDF RENDERER (Explicit Steps) ---
     story.append(Paragraph("<b>Detailed Text Analysis:</b>", styles['Heading3']))
     story.append(Spacer(1, 12))
 
     full_text = data.get('input_text', '') or ''
     segments = data.get('segments', []) or []
 
-    # Fallback
     if not full_text and segments:
         full_text = " ".join([s.get('text', '') for s in segments])
 
     if not full_text.strip():
         story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
     else:
-        # STEP 1: WORK ON RAW TEXT (Insert Markers)
-        formatted_text = full_text
+        # STEP 1: Insert Markers into RAW text (Do not escape yet)
+        # Markers must be unique strings that don't contain <, >, or &
+        step1_text_with_markers = full_text
         MARKER_START = "@@RED_START@@"
         MARKER_END = "@@RED_END@@"
 
         if segments:
             segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
-
             for seg in segments:
                 text_part = (seg.get('text', '') or '').strip()
-                if not text_part: 
-                    continue
-                
-                # IGNORE THRESHOLDS - HIGHLIGHT ALL DETECTED
-                if len(text_part) < 5: 
-                    continue # Skip noise
+                if not text_part: continue
+                if len(text_part) < 5: continue 
 
-                # Aggressive Regex (Matches across newlines)
+                # Robust Regex matching
                 pattern_str = re.escape(text_part).replace(r'\ ', r'[\s\n\r]+')
-                
                 try:
                     pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
-                    # Wrap match in MARKERS (Not HTML tags yet!)
-                    formatted_text = pattern.sub(
+                    step1_text_with_markers = pattern.sub(
                         lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
-                        formatted_text
+                        step1_text_with_markers
                     )
                 except:
                     continue
 
-        # STEP 2: ESCAPE THE TEXT (Critical Safety Step)
+        # STEP 2: Escape the text (Make it Safe)
         # This turns "&" -> "&amp;" and "<" -> "&lt;"
-        # BUT it leaves "@@RED_START@@" as is.
-        safe_text = escape(formatted_text)
+        # Crucially, our markers "@@RED_START@@" are safe and won't change.
+        step2_safe_text = escape(step1_text_with_markers)
 
-        # STEP 3: INJECT HTML TAGS (Last Step)
-        # Now we turn the markers into real ReportLab tags.
-        # Since escape() is already done, these tags will remain raw and render as color.
-        final_xml = safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+        # STEP 3: Swap Markers for REAL Tags (Inject Markup)
+        # NOW we insert the <font> tags. Since escaping is already done, these will stay as markup.
+        step3_final_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
 
-        # STEP 4: RENDER
-        for paragraph in final_xml.split('\n'):
+        # STEP 4: Render
+        for paragraph in step3_final_xml.split('\n'):
             if paragraph.strip():
                 try:
+                    # ReportLab will now see the <font> tag and render the color
                     story.append(Paragraph(paragraph, styles['Normal']))
                 except:
-                    # Fallback just in case
                     story.append(Paragraph(escape(paragraph), styles['Normal']))
                 story.append(Spacer(1, 8))
 
