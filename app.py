@@ -28,6 +28,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.units import inch
 from xml.sax.saxutils import escape
 from difflib import SequenceMatcher
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 load_dotenv()
 
@@ -387,6 +389,67 @@ def google_search(query, num_results=5):
         print(f"❌ Google Search error: {str(e)}")
         return []
 
+# --- COSINE SIMILARITY PLAGIARISM DETECTOR ---
+def calculate_similarity(input_text, db_documents):
+    """
+    Compares input_text against a list of db_documents (content strings).
+    Returns a list of matches [{'source_id': id, 'score': 0.85, 'segment': '...'}]
+    
+    Args:
+        input_text (str): The text to check for plagiarism
+        db_documents (dict): Dictionary mapping document IDs to their content strings
+    
+    Returns:
+        list: List of match dictionaries with source_id, score, and snippet
+    """
+    if not db_documents:
+        print("⚠️ No database documents to compare against")
+        return []
+
+    try:
+        # 1. Setup Corpus (Input + All DB Docs)
+        doc_ids = list(db_documents.keys())
+        corpus = [input_text] + [db_documents[doc_id] for doc_id in doc_ids]
+        
+        print(f"🔍 Cosine Similarity: Comparing against {len(doc_ids)} documents")
+
+        # 2. Vectorize (Convert text to numbers using TF-IDF)
+        vectorizer = TfidfVectorizer(
+            max_features=5000,  # Limit features for performance
+            stop_words='english',
+            ngram_range=(1, 3)  # Use unigrams, bigrams, and trigrams
+        )
+        vectors = vectorizer.fit_transform(corpus).toarray()
+
+        # 3. Compare Input (Index 0) with all others
+        input_vector = vectors[0].reshape(1, -1)
+        matches = []
+
+        for i, doc_id in enumerate(doc_ids):
+            # Comparison vector is at index i+1
+            db_vector = vectors[i+1].reshape(1, -1)
+            score = cosine_similarity(input_vector, db_vector)[0][0]
+            
+            # Threshold: Only report matches > 15% similarity
+            if score > 0.15:
+                snippet = db_documents[doc_id][:200] + "..." if len(db_documents[doc_id]) > 200 else db_documents[doc_id]
+                matches.append({
+                    'source_id': doc_id,
+                    'score': round(score * 100, 1),
+                    'snippet': snippet
+                })
+                print(f"✅ Match found: Doc {doc_id} - {score*100:.1f}% similarity")
+        
+        # Sort by score descending
+        matches = sorted(matches, key=lambda x: x['score'], reverse=True)
+        
+        print(f"🎯 Cosine Similarity: Found {len(matches)} matches above 15% threshold")
+        return matches
+        
+    except Exception as e:
+        print(f"❌ Cosine Similarity Error: {str(e)}")
+        return []
+
 # --- FORCE JSON CLEANER (OVERWRITE) ---
 def clean_and_parse_json(response_text):
     """Sanitizes AI response to extract pure JSON. Prevents 'Unexpected token' crashes."""
@@ -552,41 +615,116 @@ def check_url_status(url):
     except:
         return False
 
-# --- HYBRID PLAGIARISM HUNTER: GEMINI SEARCHES, GPT-4 VERIFIES ---
-def plagiarism_hunter_gemini(text):
+# --- ENHANCED PLAGIARISM HUNTER: COSINE SIMILARITY + AI VERIFICATION ---
+def plagiarism_hunter_enhanced(text, user_id):
     """
-    HYBRID APPROACH:
-    Step 1: Gemini searches web for potential sources (has Google access)
-    Step 2: GPT-4 performs detailed matching and scoring (more accurate)
-    This prevents hallucinated high scores with no real matches.
-    """
-    print("🔍 HYBRID PLAGIARISM DETECTION: Gemini searches, GPT-4 verifies...")
+    ENHANCED PLAGIARISM DETECTION:
+    Step 1: Cosine Similarity against user's historical documents (Essays + Reports)
+    Step 2: AI verification for external web sources (if internal matches are low)
     
-    # Step 1: Gemini searches for Sources (It has Google access)
-    search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
-TEXT: {text[:1000]}...
-JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
+    This prevents False Negatives by checking internal database first.
+    """
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI Verification...")
+    
+    # Step 1: Build database of user's previous work
+    db_documents = {}
     
     try:
-        search_data = clean_and_parse_json(call_gemini(search_prompt))
-        urls = search_data.get('potential_urls', [])
-        print(f"✅ Gemini found {len(urls)} potential URLs")
-    except: 
-        urls = []
-        print("⚠️ Gemini search failed, using empty URL list")
-
-    # Step 2: GPT-4 performs the detailed Matching & Color Coding (More accurate)
-    # We feed the URLs found by Gemini into GPT-4
-    analysis_prompt = f"""You are a Plagiarism Analyst. 
+        # Fetch user's essays
+        essays = Essay.query.filter_by(user_id=user_id).all()
+        for essay in essays:
+            db_documents[f"essay_{essay.id}"] = essay.final_content
+        
+        # Fetch user's previous plagiarism check submissions (from reports)
+        reports = Report.query.filter_by(user_id=user_id, tool_type='plagiarism').all()
+        for report in reports:
+            try:
+                report_data = json.loads(report.result_data)
+                input_text = report_data.get('input_text', '')
+                if input_text:
+                    db_documents[f"report_{report.id}"] = input_text
+            except:
+                continue
+        
+        print(f"📚 Database: Found {len(db_documents)} documents for comparison")
+        
+    except Exception as e:
+        print(f"⚠️ Database fetch error: {str(e)}")
+        db_documents = {}
+    
+    # Step 2: Run Cosine Similarity
+    internal_matches = calculate_similarity(text, db_documents)
+    
+    # Step 3: Calculate internal plagiarism score
+    if internal_matches:
+        # Use highest match as primary indicator
+        max_internal_score = max([m['score'] for m in internal_matches])
+        internal_score = min(int(max_internal_score), 100)
+        print(f"🎯 Internal Plagiarism Score: {internal_score}%")
+    else:
+        internal_score = 0
+        print("✅ No internal matches found")
+    
+    # Step 4: Build sources and matches for visualization
+    sources = []
+    matches = []
+    
+    for idx, match in enumerate(internal_matches[:5], 1):  # Limit to top 5
+        source_id = match['source_id']
+        similarity = match['score']
+        
+        # Determine source type and create readable label
+        if source_id.startswith('essay_'):
+            essay_id = source_id.replace('essay_', '')
+            domain = f"Your Essay #{essay_id}"
+            url = f"/download-essay/{essay_id}"
+        elif source_id.startswith('report_'):
+            report_id = source_id.replace('report_', '')
+            domain = f"Your Previous Submission #{report_id}"
+            url = f"/view-report/{report_id}"
+        else:
+            domain = f"Internal Document {source_id}"
+            url = "#"
+        
+        sources.append({
+            'id': idx,
+            'domain': domain,
+            'url': url,
+            'similarity': int(similarity)
+        })
+        
+        # Extract matching segment (first 200 chars of snippet)
+        matches.append({
+            'text_segment': match['snippet'],
+            'source_id': idx
+        })
+    
+    # Step 5: If internal score is low, check external sources with AI
+    if internal_score < 20:
+        print("🌐 Internal score low, checking external sources with AI...")
+        
+        # Use Gemini for web search
+        search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
+TEXT: {text[:1000]}...
+JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
+        
+        try:
+            search_data = clean_and_parse_json(call_gemini(search_prompt))
+            urls = search_data.get('potential_urls', [])
+            print(f"✅ Gemini found {len(urls)} potential external URLs")
+            
+            if urls:
+                # Use GPT-4 for detailed matching
+                analysis_prompt = f"""You are a Plagiarism Analyst. 
 1. Check if this TEXT matches content from these URLs: {urls}
 2. Extract EXACT matched segments.
-3. Assign a plagiarism score based on ACTUAL matches ONLY. If no real matches found, score MUST be 0-10.
+3. Assign a plagiarism score based on ACTUAL matches ONLY.
 
 TEXT: {text[:3000]}
 
 Return STRICT JSON:
 {{
-    "score": 0-100,
+    "external_score": 0-100,
     "sources": [
         {{"id": 1, "domain": "example.com", "url": "https://example.com/full-path", "similarity": 20}}
     ],
@@ -595,18 +733,43 @@ Return STRICT JSON:
     ]
 }}
 
-CRITICAL RULES:
-1. URLs MUST be complete with https://
-2. Score reflects ACTUAL text overlap, not speculation
-3. If no matches found, return score: 0, sources: [], matches: []"""
+CRITICAL: If no real matches found, external_score MUST be 0-10."""
+                
+                external_findings = clean_and_parse_json(call_gpt4(analysis_prompt))
+                external_score = external_findings.get('external_score', 0)
+                
+                # Merge external sources
+                for src in external_findings.get('sources', []):
+                    src['id'] = len(sources) + src['id']
+                    sources.append(src)
+                
+                # Merge external matches
+                for match in external_findings.get('matches', []):
+                    match['source_id'] = len(sources)
+                    matches.append(match)
+                
+                print(f"🌐 External Plagiarism Score: {external_score}%")
+                
+                # Final score is weighted average (internal 60%, external 40%)
+                final_score = int((internal_score * 0.6) + (external_score * 0.4))
+            else:
+                final_score = internal_score
+                
+        except Exception as e:
+            print(f"⚠️ External check failed: {str(e)}")
+            final_score = internal_score
+    else:
+        final_score = internal_score
     
-    try:
-        findings = clean_and_parse_json(call_gpt4(analysis_prompt))
-        print(f"✅ GPT-4 verification complete: Score {findings.get('score', 0)}%, {len(findings.get('sources', []))} sources")
-        return findings
-    except Exception as e:
-        print(f"❌ GPT-4 verification error: {str(e)}")
-        return {"score": 0, "sources": [], "matches": [], "error": str(e)}
+    print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
+    
+    return {
+        "score": final_score,
+        "sources": sources,
+        "matches": matches,
+        "internal_score": internal_score,
+        "documents_checked": len(db_documents)
+    }
 
 # --- 3-AGENT CONSENSUS FOR AI DETECTION ---
 def check_ai_consensus(text):
@@ -1631,19 +1794,19 @@ def generate_essay():
         }
     )
 
-# FIX #3: PLAGIARISM (Simplify Logic + PDF Export + ALWAYS SHOW TEXT)
+# ENHANCED PLAGIARISM CHECK WITH COSINE SIMILARITY
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """RESCUE FIX: Simplified plagiarism detection with guaranteed text visibility"""
+    """ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI Verification"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 RESCUE FIX: Simplified plagiarism detection...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI...")
     
-    # Use simpler logic to avoid JSON crashes
-    findings = plagiarism_hunter_gemini(text)
+    # Use enhanced plagiarism detection with internal database check
+    findings = plagiarism_hunter_enhanced(text, current_user.id)
     
     # CRITICAL: Save the original input text
     findings['input_text'] = text
@@ -1657,7 +1820,7 @@ def check_plagiarism():
     for s in findings.get('sources', []):
         color = source_colors.get(s.get('id'), '#ccc')
         url = s.get('url', '#')
-        if not url.startswith('http'): 
+        if not url.startswith('http') and not url.startswith('/'): 
             url = 'https://' + url
         
         sources_html += f'''
@@ -1692,7 +1855,7 @@ def check_plagiarism():
     {pdf_script}
     <div id="plagiarism-dashboard" style="display: flex; gap: 20px; height: 600px; font-family: sans-serif; color: #e0e0e0; background: #121212; padding: 20px;">
         <div style="flex: 1; overflow-y: auto; padding-right: 15px; border-right: 1px solid #333;">
-            <h3 style="margin-top:0;">Sources</h3>
+            <h3 style="margin-top:0;">Sources ({findings.get('documents_checked', 0)} docs checked)</h3>
             {sources_html if sources_html else "<p>No sources detected.</p>"}
         </div>
         <div style="flex: 2; background: #1e1e1e; padding: 30px; border-radius: 8px; overflow-y: auto; line-height: 1.8;">
@@ -1722,7 +1885,7 @@ def check_plagiarism():
         print(f"❌ DB save error: {str(e)}")
         report_id = None
     
-    print("✅ RESCUE FIX: Returning simplified plagiarism detection")
+    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Cosine Similarity")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
 # FIX #2: AI CHECK (Prevent Empty Box + PDF Export + ALWAYS SHOW TEXT)
@@ -1866,6 +2029,9 @@ def export_pdf_dynamic(report_id):
                 if ':' in part:
                     label, value = part.strip().split(':')
                     score_data.append([f"{label} Score", value])
+    elif report.tool_type == 'plagiarism':
+        docs_checked = data.get('documents_checked', 0)
+        score_data.append(["Documents Checked", str(docs_checked)])
     
     t = Table(score_data, colWidths=[200, 100])
     t.setStyle(TableStyle([
@@ -2028,7 +2194,7 @@ def view_report(report_id):
         for s in data.get('sources', []):
             color = source_colors.get(s.get('id'), '#ccc')
             url = s.get('url', '#')
-            if url and url != '#' and not url.startswith('http'):
+            if url and url != '#' and not url.startswith('http') and not url.startswith('/'):
                 url = 'https://' + url
             domain = s.get('domain', 'Unknown')
             similarity = s.get('similarity', 0)
