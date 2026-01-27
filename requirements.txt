@@ -17,3 +17,4 @@ scikit-learn
 psycopg2-binary
 numpy
 beautifulsoup4
+duckduckgo-search

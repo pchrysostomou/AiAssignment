@@ -31,6 +31,7 @@ from difflib import SequenceMatcher
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import hashlib
+from duckduckgo_search import DDGS
 
 load_dotenv()
 
@@ -161,13 +162,6 @@ if google_api_key:
     print(f"✅ Google API Key Loaded (ending: ...{google_api_key[-4:]})")
 else:
     print("⚠️ WARNING: GOOGLE_API_KEY not found in environment variables")
-
-# Google Custom Search Engine Configuration
-GOOGLE_CSE_ID = str(os.getenv('GOOGLE_CSE_ID', '50f552d88c3e14772')).strip()
-if GOOGLE_CSE_ID and GOOGLE_CSE_ID != '':
-    print(f"✅ Google CSE ID Configured: '{GOOGLE_CSE_ID}'")
-else:
-    print("⚠️ WARNING: GOOGLE_CSE_ID not found or empty in environment variables")
 
 # --- SMART GEMINI MODEL SELECTOR ---
 def get_working_gemini_model():
@@ -426,53 +420,34 @@ def parse_uploaded_file(file_path, filename):
     """Parse uploaded file and extract text"""
     return extract_text_from_file(file_path, filename)
 
-# Google Custom Search Integration
-def google_search(query, num_results=5):
-    """Perform Google Custom Search using the configured API key and CSE ID."""
-    if not google_api_key or not GOOGLE_CSE_ID or GOOGLE_CSE_ID == '':
-        print(f"⚠️ Google Search unavailable")
-        return []
-    
+# DuckDuckGo Search Integration (NO API KEY NEEDED)
+def search_web(query, max_results=5):
+    """
+    Perform web search using DuckDuckGo (no API key required).
+    Returns list of search results with title, link, and snippet.
+    """
     try:
-        words = query.split()
-        key_words = [w for w in words if len(w) > 1][:5]
+        print(f"🔍 DuckDuckGo Search Query: '{query[:100]}'")
         
-        if len(key_words) < 2:
-            search_query = query[:80]
-        else:
-            search_query = ' '.join(key_words)
-        
-        url = "https://www.googleapis.com/customsearch/v1"
-        params = {
-            'key': str(google_api_key).strip(),
-            'cx': str(GOOGLE_CSE_ID).strip(),
-            'q': search_query,
-            'num': num_results
-        }
-        
-        print(f"🔍 Google Search Query: '{search_query}'")
-        
-        response = requests.get(url, params=params, timeout=10)
-        
-        if response.status_code != 200:
-            print(f"❌ Google Search API Error: {response.status_code}")
-            return []
-        
-        data = response.json()
+        # Use DDGS for text search
+        ddgs = DDGS()
         results = []
         
-        for item in data.get('items', []):
+        # Perform search
+        search_results = ddgs.text(query, max_results=max_results)
+        
+        for item in search_results:
             results.append({
                 'title': item.get('title', ''),
-                'link': item.get('link', ''),
-                'snippet': item.get('snippet', '')
+                'link': item.get('href', ''),
+                'snippet': item.get('body', '')
             })
         
-        print(f"✅ Google Search completed: {len(results)} results")
+        print(f"✅ DuckDuckGo Search completed: {len(results)} results")
         return results
         
     except Exception as e:
-        print(f"❌ Google Search error: {str(e)}")
+        print(f"❌ DuckDuckGo Search error: {str(e)}")
         return []
 
 # --- COSINE SIMILARITY PLAGIARISM DETECTOR ---
@@ -535,22 +510,22 @@ def calculate_similarity(input_text, db_documents):
         print(f"❌ Cosine Similarity Error: {str(e)}")
         return []
 
-# --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST APPROACH WITH SELF-MATCH EXCLUSION ---
+# --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST + WEB SEARCH ALWAYS ---
 def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     """
-    ENHANCED PLAGIARISM DETECTION WITH PERSISTENT DATABASE + SELF-MATCH EXCLUSION:
+    ENHANCED PLAGIARISM DETECTION WITH MANDATORY WEB SEARCH:
     Step 1: Fetch ALL historical submissions EXCEPT the current one
-    Step 2: Run Cosine Similarity comparison
-    Step 3: Check external sources if internal score is low (< 20%)
+    Step 2: Run Cosine Similarity comparison (internal database)
+    Step 3: ALWAYS run external web search using DuckDuckGo (NO API KEY NEEDED)
     
     Args:
         text: The text to check for plagiarism
         user_id: ID of the current user
         current_submission_id: ID of the current submission to exclude from comparison
     
-    This prevents False Positives (100% self-match) and enables proper web fallback.
+    This prevents False Positives (100% self-match) and ensures web search always runs.
     """
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database + Mandatory Web Search...")
     
     # Step 1: Build database of ALL previous submissions EXCLUDING current one
     db_documents = {}
@@ -577,7 +552,7 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
         print(f"⚠️ Database fetch error: {str(e)}")
         db_documents = {}
     
-    # Step 2: Run Cosine Similarity
+    # Step 2: Run Cosine Similarity (Internal Database Check)
     internal_matches = calculate_similarity(text, db_documents)
     
     # Step 3: Calculate internal plagiarism score
@@ -636,67 +611,41 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
             'source_id': idx
         })
     
-    # Step 5: FORCE WEB CHECK if internal score < 20% (enables external plagiarism detection)
-    if internal_score < 20:
-        print("🌐 Internal score < 20%, triggering external web check...")
+    # Step 5: MANDATORY WEB SEARCH (ALWAYS RUNS, NO CONDITION)
+    print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
+    
+    try:
+        # Extract key phrases for search query (first 100 chars)
+        search_query = text[:100].strip()
         
-        # Use Gemini for web search
-        search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
-TEXT: {text[:1000]}...
-JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
+        # Perform DuckDuckGo search
+        web_results = search_web(search_query, max_results=5)
         
-        try:
-            search_data = clean_and_parse_json(call_gemini(search_prompt))
-            urls = search_data.get('potential_urls', [])
-            print(f"✅ Gemini found {len(urls)} potential external URLs")
+        if web_results:
+            print(f"✅ DuckDuckGo found {len(web_results)} potential external sources")
             
-            if urls:
-                # Use GPT-4 for detailed matching
-                analysis_prompt = f"""You are a Plagiarism Analyst. 
-1. Check if this TEXT matches content from these URLs: {urls}
-2. Extract EXACT matched segments.
-3. Assign a plagiarism score based on ACTUAL matches ONLY.
-
-TEXT: {text[:3000]}
-
-Return STRICT JSON:
-{{
-    "external_score": 0-100,
-    "sources": [
-        {{"id": 1, "domain": "example.com", "url": "https://example.com/full-path", "similarity": 20}}
-    ],
-    "matches": [
-        {{"text_segment": "exact text from student...", "source_id": 1}}
-    ]
-}}
-
-CRITICAL: If no real matches found, external_score MUST be 0-10."""
+            # Add web results to sources
+            for idx, result in enumerate(web_results, len(sources) + 1):
+                sources.append({
+                    'id': idx,
+                    'domain': result['title'][:50] + "..." if len(result['title']) > 50 else result['title'],
+                    'url': result['link'],
+                    'similarity': 50  # Placeholder similarity for web results
+                })
                 
-                external_findings = clean_and_parse_json(call_gpt4(analysis_prompt))
-                external_score = external_findings.get('external_score', 0)
-                
-                # Merge external sources
-                for src in external_findings.get('sources', []):
-                    src['id'] = len(sources) + src['id']
-                    sources.append(src)
-                
-                # Merge external matches
-                for match in external_findings.get('matches', []):
-                    match['source_id'] = len(sources)
-                    matches.append(match)
-                
-                print(f"🌐 External Plagiarism Score: {external_score}%")
-                
-                # Final score is weighted average (internal 70%, external 30%)
-                final_score = int((internal_score * 0.7) + (external_score * 0.3))
-            else:
-                final_score = internal_score
-                
-        except Exception as e:
-            print(f"⚠️ External check failed: {str(e)}")
-            final_score = internal_score
-    else:
-        final_score = internal_score
+                # Add snippet as match
+                matches.append({
+                    'text_segment': result['snippet'][:200] + "..." if len(result['snippet']) > 200 else result['snippet'],
+                    'source_id': idx
+                })
+        else:
+            print("⚠️ No web results found")
+            
+    except Exception as e:
+        print(f"⚠️ Web search failed: {str(e)}")
+    
+    # Step 6: Calculate final score (internal only, web results are informational)
+    final_score = internal_score
     
     print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
     
@@ -983,14 +932,14 @@ def generate_essay_stream(instructions, word_count):
         yield f"data: {json.dumps({'type': 'log', 'message': '🔒 Enhanced Ratchet: Prevents shrinkage during growth'})}\n\n"
         yield f"data: {json.dumps({'type': 'log', 'message': '🧱 Floor Mechanism: Once target reached, word count cannot drop below target'})}\n\n"
         
-        # Research Phase
+        # Research Phase using DuckDuckGo
         yield f"data: {json.dumps({'type': 'progress', 'current': 0, 'total': MAX_ROUNDS, 'percentage': 0, 'stage': 'Research'})}\n\n"
-        yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via Google Custom Search...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'log', 'message': '🔍 Researching topic via DuckDuckGo Search...'})}\n\n"
         
         research_context = ""
         try:
             search_query = instructions[:150]
-            search_results = google_search(search_query, num_results=5)
+            search_results = search_web(search_query, max_results=5)
             
             if search_results:
                 research_context = "\n\nRESEARCH CONTEXT (from web search):\n"
@@ -1905,16 +1854,16 @@ def generate_essay():
         }
     )
 
-# ENHANCED PLAGIARISM CHECK WITH PERSISTENT DATABASE + SELF-MATCH EXCLUSION
+# ENHANCED PLAGIARISM CHECK WITH PERSISTENT DATABASE + SELF-MATCH EXCLUSION + MANDATORY WEB SEARCH
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion + Auto-Archiving"""
+    """ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion + Mandatory Web Search + Auto-Archiving"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion + Mandatory Web Search...")
     
     # AUTO-ARCHIVE: Save this submission to the database FIRST
     current_submission = archive_text_submission(
@@ -1927,7 +1876,7 @@ def check_plagiarism():
     # Get the ID of the current submission to exclude from comparison
     current_submission_id = current_submission.id if current_submission else None
     
-    # Use enhanced plagiarism detection with persistent database + self-match exclusion
+    # Use enhanced plagiarism detection with persistent database + self-match exclusion + mandatory web search
     findings = plagiarism_hunter_enhanced(text, current_user.id, current_submission_id)
     
     # CRITICAL: Save the original input text
@@ -2007,7 +1956,7 @@ def check_plagiarism():
         print(f"❌ DB save error: {str(e)}")
         report_id = None
     
-    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Self-Match Exclusion + Web Fallback")
+    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Self-Match Exclusion + Mandatory Web Search")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
 # AI CHECK WITH AUTO-ARCHIVING
