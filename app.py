@@ -36,11 +36,24 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///academic_suite.db')
+
+# CRITICAL FIX: PostgreSQL URL Protocol Handling for SQLAlchemy 1.4+
+database_url = os.getenv('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+    print(f"✅ DATABASE_URL protocol fixed: postgres:// → postgresql://")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///local_fallback.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['REPORTS_FOLDER'] = 'reports'
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25MB
+
+# Log database configuration
+if database_url:
+    print(f"✅ Using PostgreSQL database (Supabase)")
+else:
+    print(f"⚠️ Using SQLite fallback database (local_fallback.db)")
 
 # Add Stripe Publishable Key to config so templates can access it
 app.config['STRIPE_PUBLISHABLE_KEY'] = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
@@ -2427,11 +2440,11 @@ def download_essay(essay_id):
         headers={'Content-Disposition': f'attachment; filename=essay_{essay_id}.docx'}
     )
 
-# Initialize database
+# Initialize database with app context
 with app.app_context():
-    print("🔧 Creating database...")
+    print("🔧 Creating database tables...")
     db.create_all()
-    print("✅ Database ready!")
+    print("✅ Database tables created successfully!")
     
     # Check if TextSubmission table exists
     try:
