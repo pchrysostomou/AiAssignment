@@ -450,10 +450,39 @@ def search_web(query, max_results=5):
         print(f"❌ DuckDuckGo Search error: {str(e)}")
         return []
 
+def build_search_query(text, max_len=180):
+    """Extract focused sentences/keywords for web search."""
+    if not text:
+        return ""
+
+    # Prefer sentence-sized chunks to avoid huge blobs
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    candidates = [s.strip() for s in sentences if 20 <= len(s.strip()) <= 200]
+    candidates.sort(key=len, reverse=True)
+
+    if candidates:
+        query = " ".join(candidates[:2])
+    else:
+        # Fallback: simple keyword extraction
+        words = re.findall(r"[A-Za-z]{4,}", text.lower())
+        stopwords = {
+            "this","that","with","from","have","were","been","their","about","which","would","there",
+            "could","should","also","into","than","then","them","they","these","those","your","you",
+            "some","more","most","such","only","over","very","much","many","when","where","what",
+            "who","whom","whose","and","the","for","are","but","not","was","were","has","had","did",
+            "can","may","will","its","it's","his","her","our","out","use","used","using","other",
+            "the","a","an","in","on","of","to","is","it","as","at","by","be","or","if","we","he","she"
+        }
+        keywords = [w for w in words if w not in stopwords]
+        unique = list(dict.fromkeys(keywords))[:12]
+        query = " ".join(unique)
+
+    return query[:max_len].strip()
+
 def run_web_search(text, sources, matches, max_results=5):
     """Run DuckDuckGo search and append results to sources/matches."""
     try:
-        search_query = (text or "").strip()[:100]
+        search_query = build_search_query(text)
         if not search_query:
             print("⚠️ Web search skipped: empty query")
             return
