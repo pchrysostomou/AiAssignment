@@ -531,15 +531,18 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     db_documents = {}
     
     try:
-        # Fetch ALL text submissions EXCEPT the current one
-        query = TextSubmission.query.order_by(TextSubmission.created_at.desc()).limit(1000)
+        # CRITICAL FIX: Correct SQLAlchemy query order
+        # 1. Order by created_at descending
+        # 2. Filter to exclude current submission (BEFORE limit)
+        # 3. Apply limit (LAST)
+        query = TextSubmission.query.order_by(TextSubmission.created_at.desc())
         
-        # CRITICAL FIX: Exclude current submission ID
         if current_submission_id:
             query = query.filter(TextSubmission.id != current_submission_id)
             print(f"🚫 Excluding current submission ID: {current_submission_id}")
         
-        all_submissions = query.all()
+        # Apply limit LAST to avoid SQLAlchemy crash
+        all_submissions = query.limit(1000).all()
         
         for submission in all_submissions:
             # Use submission ID as key
