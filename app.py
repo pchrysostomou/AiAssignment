@@ -425,7 +425,7 @@ def search_web(text, max_results=5, max_queries=3):
     """
     Perform web search using DuckDuckGo (no API key required).
     Splits input text into sentence queries to avoid huge blobs.
-    Returns list of search results with title, link, and snippet.
+    Returns list of search results with title, link, snippet, and similarity_score.
     """
     try:
         sentences = re.split(r'(?<=[.!?])\s+', (text or "").strip())
@@ -453,7 +453,8 @@ def search_web(text, max_results=5, max_queries=3):
                 results.append({
                     'title': item.get('title', ''),
                     'link': item.get('href', ''),
-                    'snippet': item.get('body', '')
+                    'snippet': item.get('body', ''),
+                    'similarity_score': 50
                 })
 
         print(f"✅ DuckDuckGo Search completed: {len(results)} results")
@@ -503,7 +504,7 @@ def run_web_search(text, sources, matches, max_results=5):
                     'id': idx,
                     'domain': result['title'][:50] + "..." if len(result['title']) > 50 else result['title'],
                     'url': result['link'],
-                    'similarity': 50,
+                    'similarity': int(result.get('similarity_score', 50)),
                     'is_internal': False
                 })
 
@@ -579,120 +580,85 @@ def calculate_similarity(input_text, db_documents):
 # --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST + WEB SEARCH ALWAYS ---
 def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     """
-    ENHANCED PLAGIARISM DETECTION WITH MANDATORY WEB SEARCH:
-    Step 1: Fetch ALL historical submissions EXCEPT the current one
-    Step 2: Run Cosine Similarity comparison (internal database)
-    Step 3: ALWAYS run external web search using DuckDuckGo (NO API KEY NEEDED)
-    
-    Args:
-        text: The text to check for plagiarism
-        user_id: ID of the current user
-        current_submission_id: ID of the current submission to exclude from comparison
-    
-    This prevents False Positives (100% self-match) and ensures web search always runs.
+    ENHANCED PLAGIARISM DETECTION:
+    - Internal DB similarity via TF-IDF
+    - External web search via DuckDuckGo unless internal score is 100%
     """
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Database + Mandatory Web Search...")
-    
-    # Step 1: Build database of ALL previous submissions EXCLUDING current one
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database + Web Search...")
+
+    # Step 1: Build database of previous plagiarism submissions excluding current
     db_documents = {}
-    
     try:
-        # CRITICAL FIX: Correct SQLAlchemy query order
-        # 1. Filter to only plagiarism submissions
-        # 2. Order by created_at descending
-        # 3. Filter to exclude current submission (BEFORE limit)
-        # 4. Apply limit (LAST)
         query = TextSubmission.query.filter(
             TextSubmission.source_type == 'plagiarism_check'
         ).order_by(TextSubmission.created_at.desc())
-        
+
         if current_submission_id:
             query = query.filter(TextSubmission.id != current_submission_id)
             print(f"🚫 Excluding current submission ID: {current_submission_id}")
-        
-        # Apply limit LAST to avoid SQLAlchemy crash
+
         all_submissions = query.limit(100).all()
-        
         for submission in all_submissions:
-            # Use submission ID as key
             doc_key = f"submission_{submission.id}"
             db_documents[doc_key] = submission.content
-        
+
         print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison (excluding current)")
-        
     except Exception as e:
         print(f"⚠️ Database fetch error: {str(e)}")
         db_documents = {}
-    
-    # Step 2: Run Cosine Similarity (Internal Database Check)
+
+    # Step 2: Internal similarity
     internal_matches = calculate_similarity(text, db_documents)
-    
-    # Step 3: Calculate internal plagiarism score
     if internal_matches:
-        # Use highest match as primary indicator
         max_internal_score = max([m['score'] for m in internal_matches])
         internal_score = min(int(max_internal_score), 100)
         print(f"🎯 Internal Plagiarism Score: {internal_score}%")
     else:
         internal_score = 0
         print("✅ No internal matches found")
-    
-    # Step 4: Build sources and matches for visualization
+
+    # Step 3: Build sources/matches list from internal DB
     sources = []
     matches = []
-    
-    for idx, match in enumerate(internal_matches[:10], 1):  # Limit to top 10
-        source_id_str = match['source_id']
-        similarity = match['score']
-        
-        # Extract submission ID from source_id (format: "submission_123")
-        if source_id_str.startswith('submission_'):
-            submission_id = int(source_id_str.replace('submission_', ''))
-            
-            # Fetch submission details
-            try:
-                submission = TextSubmission.query.get(submission_id)
-                if submission:
-                    # Check if it's from the same user
-                    domain = "Internal Database Repository"
-                    url = None
-                else:
-                    domain = "Internal Database Repository"
-                    url = None
-            except:
-                domain = "Internal Database Repository"
-                url = None
-        else:
-            domain = "Internal Database Repository"
-            url = None
-        
+
+    for idx, match in enumerate(internal_matches[:10], 1):
         sources.append({
             'id': idx,
-            'domain': domain,
-            'url': url,
-            'similarity': int(similarity),
+            'domain': "Internal Database Repository",
+            'url': None,
+            'similarity': int(match['score']),
             'is_internal': True
         })
-        
-        # Extract matching segment (first 200 chars of snippet)
         matches.append({
             'text_segment': match['snippet'],
             'source_id': idx
         })
-    
-    # Step 5: CONDITIONAL WEB SEARCH (MANDATORY unless internal_score is 100%)
-    should_run_web = internal_score < 100
-    if should_run_web:
+
+    # Step 4: Mandatory web search unless internal_score is 100%
+    if internal_score < 100:
         print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
-        run_web_search(text, sources, matches, max_results=5)
+        web_results = search_web(text, max_results=5)
+        if web_results:
+            for idx, result in enumerate(web_results, len(sources) + 1):
+                sources.append({
+                    'id': idx,
+                    'domain': result['title'][:50] + "..." if len(result['title']) > 50 else result['title'],
+                    'url': result['link'],
+                    'similarity': int(result.get('similarity_score', 50)),
+                    'is_internal': False
+                })
+                matches.append({
+                    'text_segment': result['snippet'][:200] + "..." if len(result['snippet']) > 200 else result['snippet'],
+                    'source_id': idx
+                })
+        else:
+            print("⚠️ No web results found")
     else:
-        print("✅ Skipping web search (internal score >= 80)")
-    
-    # Step 6: Calculate final score (internal only, web results are informational)
+        print("✅ Skipping web search (internal score == 100%)")
+
     final_score = internal_score
-    
     print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
-    
+
     return {
         "score": final_score,
         "sources": sources,
