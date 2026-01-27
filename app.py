@@ -532,17 +532,20 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     
     try:
         # CRITICAL FIX: Correct SQLAlchemy query order
-        # 1. Order by created_at descending
-        # 2. Filter to exclude current submission (BEFORE limit)
-        # 3. Apply limit (LAST)
-        query = TextSubmission.query.order_by(TextSubmission.created_at.desc())
+        # 1. Filter to only plagiarism submissions
+        # 2. Order by created_at descending
+        # 3. Filter to exclude current submission (BEFORE limit)
+        # 4. Apply limit (LAST)
+        query = TextSubmission.query.filter(
+            TextSubmission.source_type == 'plagiarism_check'
+        ).order_by(TextSubmission.created_at.desc())
         
         if current_submission_id:
             query = query.filter(TextSubmission.id != current_submission_id)
             print(f"🚫 Excluding current submission ID: {current_submission_id}")
         
         # Apply limit LAST to avoid SQLAlchemy crash
-        all_submissions = query.limit(1000).all()
+        all_submissions = query.limit(100).all()
         
         for submission in all_submissions:
             # Use submission ID as key
@@ -585,27 +588,24 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
                 submission = TextSubmission.query.get(submission_id)
                 if submission:
                     # Check if it's from the same user
-                    if submission.user_id == user_id:
-                        domain = f"Your {submission.source_type.replace('_', ' ').title()} (ID: {submission_id})"
-                    else:
-                        domain = f"System Archive {submission.source_type.replace('_', ' ').title()} (ID: {submission_id})"
-                    
-                    url = f"#submission-{submission_id}"  # Internal reference
+                    domain = "Internal Database Repository"
+                    url = None
                 else:
-                    domain = f"Archived Document {submission_id}"
-                    url = "#"
+                    domain = "Internal Database Repository"
+                    url = None
             except:
-                domain = f"Archived Document {submission_id}"
-                url = "#"
+                domain = "Internal Database Repository"
+                url = None
         else:
-            domain = f"Internal Document {source_id_str}"
-            url = "#"
+            domain = "Internal Database Repository"
+            url = None
         
         sources.append({
             'id': idx,
             'domain': domain,
             'url': url,
-            'similarity': int(similarity)
+            'similarity': int(similarity),
+            'is_internal': True
         })
         
         # Extract matching segment (first 200 chars of snippet)
@@ -1630,7 +1630,8 @@ def dashboard():
 @app.route('/tools/writer')
 @login_required
 def tool_writer():
-    return render_template('tool_writer.html', user=current_user)
+    # Placeholder to prevent Dashboard crash
+    return render_template('dashboard.html', user=current_user, active_tool='writer')
 
 @app.route('/tools/plagiarism')
 @login_required
@@ -1893,14 +1894,22 @@ def check_plagiarism():
     sources_html = ""
     for s in findings.get('sources', []):
         color = source_colors.get(s.get('id'), '#ccc')
-        url = s.get('url', '#')
-        if not url.startswith('http') and not url.startswith('/') and url != '#': 
+        url = s.get('url')
+        is_internal = s.get('is_internal', False) or not url or url == '#'
+        if not is_internal and not url.startswith('http') and not url.startswith('/'):
             url = 'https://' + url
         
+        domain = s.get('domain')
+        link_or_text = (
+            f'<span style="color:{color}; font-weight:bold;">{domain}</span>'
+            if is_internal
+            else f'<a href="{url}" target="_blank" style="color:{color}; font-weight:bold; text-decoration:none;">{domain} 🔗</a>'
+        )
+
         sources_html += f'''
         <div style="border-left: 5px solid {color}; background: #2d2d2d; margin-bottom: 10px; padding: 10px;">
             <div style="display:flex; justify-content:space-between;">
-                <a href="{url}" target="_blank" style="color:{color}; font-weight:bold; text-decoration:none;">{s.get('domain')} 🔗</a>
+                {link_or_text}
                 <span style="color:white;">{s.get('similarity')}%</span>
             </div>
         </div>'''
@@ -2139,10 +2148,13 @@ def export_pdf_dynamic(report_id):
             
             for s in sources:
                 domain = s.get('domain', 'Unknown')
-                url = s.get('url', '#')
+                url = s.get('url')
                 similarity = s.get('similarity', 0)
-                
-                source_text = f"• <b>{domain}</b> ({similarity}% match)<br/><i>{url}</i>"
+
+                if url and url != '#':
+                    source_text = f"• <b>{domain}</b> ({similarity}% match)<br/><i>{url}</i>"
+                else:
+                    source_text = f"• <b>{domain}</b> ({similarity}% match)"
                 story.append(Paragraph(source_text, styles['Normal']))
                 story.append(Spacer(1, 8))
             
@@ -2163,19 +2175,37 @@ def export_pdf_dynamic(report_id):
     else:
         # STEP 1: Insert Markers into RAW text
         step1_text = full_text
-        MARKER_START = "@@RED_START@@"
-        MARKER_END = "@@RED_END@@"
 
-        if segments:
+        if report.tool_type == 'plagiarism':
+            MARKER_START = "@@RED_TEXT_START@@"
+            MARKER_END = "@@RED_TEXT_END@@"
+            match_segments = data.get('matches', []) or []
+
+            match_segments.sort(key=lambda x: len((x.get('text_segment', '') or '')), reverse=True)
+            for seg in match_segments:
+                text_part = (seg.get('text_segment', '') or '').strip()
+                if not text_part or len(text_part) < 5:
+                    continue
+
+                pattern_str = re.escape(text_part).replace(r'\ ', r'[\s\n\r]+')
+                try:
+                    pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
+                    step1_text = pattern.sub(
+                        lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
+                        step1_text
+                    )
+                except:
+                    continue
+        else:
+            MARKER_START = "@@RED_START@@"
+            MARKER_END = "@@RED_END@@"
+
             segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
             for seg in segments:
                 text_part = (seg.get('text', '') or '').strip()
-                if not text_part: continue
-                
-                # Highlight everything detected
-                if len(text_part) < 5: continue 
+                if not text_part or len(text_part) < 5:
+                    continue
 
-                # Robust Regex matching
                 pattern_str = re.escape(text_part).replace(r'\ ', r'[\s\n\r]+')
                 try:
                     pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
@@ -2190,15 +2220,15 @@ def export_pdf_dynamic(report_id):
         step2_safe_text = escape(step1_text)
 
         # STEP 3: Swap Markers & Handle Newlines
-        # A. Restore Highlights (Markers -> Tags)
-        step3_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
-        
-        # B. Handle Newlines (CRITICAL FIX)
+        if report.tool_type == 'plagiarism':
+            step3_xml = step2_safe_text.replace(MARKER_START, '<font color="red">').replace(MARKER_END, '</font>')
+        else:
+            step3_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+
         # Replace \n with <br/> so the XML structure remains valid in one big block
-        step3_xml = step3_xml.replace('\n', '<br/>') 
+        step3_xml = step3_xml.replace('\n', '<br/>')
 
         # STEP 4: Render as ONE single paragraph
-        # ReportLab handles wrapping automatically
         try:
             story.append(Paragraph(step3_xml, styles['Normal']))
         except Exception as e:
@@ -2275,18 +2305,23 @@ def view_report(report_id):
         sources_html = ''
         for s in data.get('sources', []):
             color = source_colors.get(s.get('id'), '#ccc')
-            url = s.get('url', '#')
-            if url and url != '#' and not url.startswith('http') and not url.startswith('/'):
+            url = s.get('url')
+            is_internal = s.get('is_internal', False) or not url or url == '#'
+            if not is_internal and not url.startswith('http') and not url.startswith('/'):
                 url = 'https://' + url
             domain = s.get('domain', 'Unknown')
             similarity = s.get('similarity', 0)
-            
+
+            link_or_text = (
+                f'<span style="color: {color}; font-weight:bold; font-size:1.1em; word-break: break-all;">{domain}</span>'
+                if is_internal
+                else f'<a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.1em; word-break: break-all;">{domain} 🔗</a>'
+            )
+
             sources_html += f'''
             <div style="border-left: 5px solid {color}; background: #2d2d2d; margin-bottom: 10px; padding: 12px; border-radius: 4px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.1em; word-break: break-all;">
-                        {domain} 🔗
-                    </a>
+                    {link_or_text}
                     <span style="background:{color}; color:black; padding:2px 8px; border-radius:10px; font-weight:bold;">{similarity}%</span>
                 </div>
             </div>'''
