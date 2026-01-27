@@ -13,3 +13,4 @@ sqlalchemy
 flask-login
 flask-sqlalchemy
 openai
+scikit-learn

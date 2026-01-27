@@ -30,6 +30,7 @@ from xml.sax.saxutils import escape
 from difflib import SequenceMatcher
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import hashlib
 
 load_dotenv()
 
@@ -223,6 +224,7 @@ class User(UserMixin, db.Model):
     essays = db.relationship('Essay', backref='author', lazy=True)
     reports = db.relationship('Report', backref='author', lazy=True)
     payments = db.relationship('Payment', backref='user', lazy=True)
+    submissions = db.relationship('TextSubmission', backref='submitter', lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -258,9 +260,80 @@ class Payment(db.Model):
     stripe_session_id = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# NEW MODEL: Persistent Text Submission Archive for Plagiarism Detection
+class TextSubmission(db.Model):
+    """
+    Stores all text submissions for plagiarism detection history.
+    Every essay, AI check, or plagiarism check is archived here.
+    """
+    __tablename__ = 'text_submission'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)  # Full text content
+    content_hash = db.Column(db.String(64), nullable=False, index=True)  # SHA-256 hash for deduplication
+    word_count = db.Column(db.Integer, nullable=False)
+    source_type = db.Column(db.String(50), nullable=False)  # 'essay', 'plagiarism_check', 'ai_check', 'grader'
+    title = db.Column(db.String(200))  # Optional title/preview
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    
+    def __repr__(self):
+        return f'<TextSubmission {self.id}: {self.title[:30]}... by User {self.user_id}>'
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+# Helper function to archive text submissions
+def archive_text_submission(user_id, content, source_type, title=None):
+    """
+    Archives a text submission to the database for plagiarism detection history.
+    Uses content hash to prevent duplicate storage.
+    
+    Args:
+        user_id: ID of the user submitting the text
+        content: Full text content
+        source_type: Type of submission ('essay', 'plagiarism_check', 'ai_check', 'grader')
+        title: Optional title or preview text
+    
+    Returns:
+        TextSubmission object or None if duplicate
+    """
+    try:
+        # Generate SHA-256 hash of content for deduplication
+        content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+        
+        # Check if this exact content already exists for this user
+        existing = TextSubmission.query.filter_by(
+            user_id=user_id,
+            content_hash=content_hash
+        ).first()
+        
+        if existing:
+            print(f"⚠️ Duplicate content detected (hash: {content_hash[:8]}...), skipping archive")
+            return existing
+        
+        # Create new submission record
+        word_count = len(content.split())
+        submission = TextSubmission(
+            user_id=user_id,
+            content=content,
+            content_hash=content_hash,
+            word_count=word_count,
+            source_type=source_type,
+            title=title or content[:50] + "..."
+        )
+        
+        db.session.add(submission)
+        db.session.commit()
+        
+        print(f"✅ Archived text submission: ID {submission.id}, {word_count} words, type: {source_type}")
+        return submission
+        
+    except Exception as e:
+        print(f"❌ Error archiving text submission: {str(e)}")
+        db.session.rollback()
+        return None
 
 # File handling
 def allowed_file(filename):
@@ -392,8 +465,7 @@ def google_search(query, num_results=5):
 # --- COSINE SIMILARITY PLAGIARISM DETECTOR ---
 def calculate_similarity(input_text, db_documents):
     """
-    Compares input_text against a list of db_documents (content strings).
-    Returns a list of matches [{'source_id': id, 'score': 0.85, 'segment': '...'}]
+    Compares input_text against a list of db_documents using TF-IDF + Cosine Similarity.
     
     Args:
         input_text (str): The text to check for plagiarism
@@ -449,6 +521,170 @@ def calculate_similarity(input_text, db_documents):
     except Exception as e:
         print(f"❌ Cosine Similarity Error: {str(e)}")
         return []
+
+# --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST APPROACH ---
+def plagiarism_hunter_enhanced(text, user_id):
+    """
+    ENHANCED PLAGIARISM DETECTION WITH PERSISTENT DATABASE:
+    Step 1: Fetch ALL historical submissions from TextSubmission table
+    Step 2: Run Cosine Similarity comparison
+    Step 3: Optionally check external sources if internal score is low
+    
+    This prevents False Negatives by checking the persistent database first.
+    """
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Cosine Similarity...")
+    
+    # Step 1: Build database of ALL previous submissions (not just current user)
+    db_documents = {}
+    
+    try:
+        # Fetch ALL text submissions from the database (system-wide history)
+        # This creates a comprehensive plagiarism detection system
+        all_submissions = TextSubmission.query.order_by(TextSubmission.created_at.desc()).limit(1000).all()
+        
+        for submission in all_submissions:
+            # Use submission ID as key
+            doc_key = f"submission_{submission.id}"
+            db_documents[doc_key] = submission.content
+        
+        print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison")
+        
+    except Exception as e:
+        print(f"⚠️ Database fetch error: {str(e)}")
+        db_documents = {}
+    
+    # Step 2: Run Cosine Similarity
+    internal_matches = calculate_similarity(text, db_documents)
+    
+    # Step 3: Calculate internal plagiarism score
+    if internal_matches:
+        # Use highest match as primary indicator
+        max_internal_score = max([m['score'] for m in internal_matches])
+        internal_score = min(int(max_internal_score), 100)
+        print(f"🎯 Internal Plagiarism Score: {internal_score}%")
+    else:
+        internal_score = 0
+        print("✅ No internal matches found")
+    
+    # Step 4: Build sources and matches for visualization
+    sources = []
+    matches = []
+    
+    for idx, match in enumerate(internal_matches[:10], 1):  # Limit to top 10
+        source_id_str = match['source_id']
+        similarity = match['score']
+        
+        # Extract submission ID from source_id (format: "submission_123")
+        if source_id_str.startswith('submission_'):
+            submission_id = int(source_id_str.replace('submission_', ''))
+            
+            # Fetch submission details
+            try:
+                submission = TextSubmission.query.get(submission_id)
+                if submission:
+                    # Check if it's from the same user
+                    if submission.user_id == user_id:
+                        domain = f"Your {submission.source_type.replace('_', ' ').title()} (ID: {submission_id})"
+                    else:
+                        domain = f"System Archive {submission.source_type.replace('_', ' ').title()} (ID: {submission_id})"
+                    
+                    url = f"#submission-{submission_id}"  # Internal reference
+                else:
+                    domain = f"Archived Document {submission_id}"
+                    url = "#"
+            except:
+                domain = f"Archived Document {submission_id}"
+                url = "#"
+        else:
+            domain = f"Internal Document {source_id_str}"
+            url = "#"
+        
+        sources.append({
+            'id': idx,
+            'domain': domain,
+            'url': url,
+            'similarity': int(similarity)
+        })
+        
+        # Extract matching segment (first 200 chars of snippet)
+        matches.append({
+            'text_segment': match['snippet'],
+            'source_id': idx
+        })
+    
+    # Step 5: If internal score is low, optionally check external sources with AI
+    if internal_score < 20:
+        print("🌐 Internal score low, checking external sources with AI...")
+        
+        # Use Gemini for web search
+        search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
+TEXT: {text[:1000]}...
+JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
+        
+        try:
+            from app import call_gemini, clean_and_parse_json, call_gpt4
+            
+            search_data = clean_and_parse_json(call_gemini(search_prompt))
+            urls = search_data.get('potential_urls', [])
+            print(f"✅ Gemini found {len(urls)} potential external URLs")
+            
+            if urls:
+                # Use GPT-4 for detailed matching
+                analysis_prompt = f"""You are a Plagiarism Analyst. 
+1. Check if this TEXT matches content from these URLs: {urls}
+2. Extract EXACT matched segments.
+3. Assign a plagiarism score based on ACTUAL matches ONLY.
+
+TEXT: {text[:3000]}
+
+Return STRICT JSON:
+{{
+    "external_score": 0-100,
+    "sources": [
+        {{"id": 1, "domain": "example.com", "url": "https://example.com/full-path", "similarity": 20}}
+    ],
+    "matches": [
+        {{"text_segment": "exact text from student...", "source_id": 1}}
+    ]
+}}
+
+CRITICAL: If no real matches found, external_score MUST be 0-10."""
+                
+                external_findings = clean_and_parse_json(call_gpt4(analysis_prompt))
+                external_score = external_findings.get('external_score', 0)
+                
+                # Merge external sources
+                for src in external_findings.get('sources', []):
+                    src['id'] = len(sources) + src['id']
+                    sources.append(src)
+                
+                # Merge external matches
+                for match in external_findings.get('matches', []):
+                    match['source_id'] = len(sources)
+                    matches.append(match)
+                
+                print(f"🌐 External Plagiarism Score: {external_score}%")
+                
+                # Final score is weighted average (internal 70%, external 30%)
+                final_score = int((internal_score * 0.7) + (external_score * 0.3))
+            else:
+                final_score = internal_score
+                
+        except Exception as e:
+            print(f"⚠️ External check failed: {str(e)}")
+            final_score = internal_score
+    else:
+        final_score = internal_score
+    
+    print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
+    
+    return {
+        "score": final_score,
+        "sources": sources,
+        "matches": matches,
+        "internal_score": internal_score,
+        "documents_checked": len(db_documents)
+    }
 
 # --- FORCE JSON CLEANER (OVERWRITE) ---
 def clean_and_parse_json(response_text):
@@ -615,162 +851,6 @@ def check_url_status(url):
     except:
         return False
 
-# --- ENHANCED PLAGIARISM HUNTER: COSINE SIMILARITY + AI VERIFICATION ---
-def plagiarism_hunter_enhanced(text, user_id):
-    """
-    ENHANCED PLAGIARISM DETECTION:
-    Step 1: Cosine Similarity against user's historical documents (Essays + Reports)
-    Step 2: AI verification for external web sources (if internal matches are low)
-    
-    This prevents False Negatives by checking internal database first.
-    """
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI Verification...")
-    
-    # Step 1: Build database of user's previous work
-    db_documents = {}
-    
-    try:
-        # Fetch user's essays
-        essays = Essay.query.filter_by(user_id=user_id).all()
-        for essay in essays:
-            db_documents[f"essay_{essay.id}"] = essay.final_content
-        
-        # Fetch user's previous plagiarism check submissions (from reports)
-        reports = Report.query.filter_by(user_id=user_id, tool_type='plagiarism').all()
-        for report in reports:
-            try:
-                report_data = json.loads(report.result_data)
-                input_text = report_data.get('input_text', '')
-                if input_text:
-                    db_documents[f"report_{report.id}"] = input_text
-            except:
-                continue
-        
-        print(f"📚 Database: Found {len(db_documents)} documents for comparison")
-        
-    except Exception as e:
-        print(f"⚠️ Database fetch error: {str(e)}")
-        db_documents = {}
-    
-    # Step 2: Run Cosine Similarity
-    internal_matches = calculate_similarity(text, db_documents)
-    
-    # Step 3: Calculate internal plagiarism score
-    if internal_matches:
-        # Use highest match as primary indicator
-        max_internal_score = max([m['score'] for m in internal_matches])
-        internal_score = min(int(max_internal_score), 100)
-        print(f"🎯 Internal Plagiarism Score: {internal_score}%")
-    else:
-        internal_score = 0
-        print("✅ No internal matches found")
-    
-    # Step 4: Build sources and matches for visualization
-    sources = []
-    matches = []
-    
-    for idx, match in enumerate(internal_matches[:5], 1):  # Limit to top 5
-        source_id = match['source_id']
-        similarity = match['score']
-        
-        # Determine source type and create readable label
-        if source_id.startswith('essay_'):
-            essay_id = source_id.replace('essay_', '')
-            domain = f"Your Essay #{essay_id}"
-            url = f"/download-essay/{essay_id}"
-        elif source_id.startswith('report_'):
-            report_id = source_id.replace('report_', '')
-            domain = f"Your Previous Submission #{report_id}"
-            url = f"/view-report/{report_id}"
-        else:
-            domain = f"Internal Document {source_id}"
-            url = "#"
-        
-        sources.append({
-            'id': idx,
-            'domain': domain,
-            'url': url,
-            'similarity': int(similarity)
-        })
-        
-        # Extract matching segment (first 200 chars of snippet)
-        matches.append({
-            'text_segment': match['snippet'],
-            'source_id': idx
-        })
-    
-    # Step 5: If internal score is low, check external sources with AI
-    if internal_score < 20:
-        print("🌐 Internal score low, checking external sources with AI...")
-        
-        # Use Gemini for web search
-        search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
-TEXT: {text[:1000]}...
-JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
-        
-        try:
-            search_data = clean_and_parse_json(call_gemini(search_prompt))
-            urls = search_data.get('potential_urls', [])
-            print(f"✅ Gemini found {len(urls)} potential external URLs")
-            
-            if urls:
-                # Use GPT-4 for detailed matching
-                analysis_prompt = f"""You are a Plagiarism Analyst. 
-1. Check if this TEXT matches content from these URLs: {urls}
-2. Extract EXACT matched segments.
-3. Assign a plagiarism score based on ACTUAL matches ONLY.
-
-TEXT: {text[:3000]}
-
-Return STRICT JSON:
-{{
-    "external_score": 0-100,
-    "sources": [
-        {{"id": 1, "domain": "example.com", "url": "https://example.com/full-path", "similarity": 20}}
-    ],
-    "matches": [
-        {{"text_segment": "exact text from student...", "source_id": 1}}
-    ]
-}}
-
-CRITICAL: If no real matches found, external_score MUST be 0-10."""
-                
-                external_findings = clean_and_parse_json(call_gpt4(analysis_prompt))
-                external_score = external_findings.get('external_score', 0)
-                
-                # Merge external sources
-                for src in external_findings.get('sources', []):
-                    src['id'] = len(sources) + src['id']
-                    sources.append(src)
-                
-                # Merge external matches
-                for match in external_findings.get('matches', []):
-                    match['source_id'] = len(sources)
-                    matches.append(match)
-                
-                print(f"🌐 External Plagiarism Score: {external_score}%")
-                
-                # Final score is weighted average (internal 60%, external 40%)
-                final_score = int((internal_score * 0.6) + (external_score * 0.4))
-            else:
-                final_score = internal_score
-                
-        except Exception as e:
-            print(f"⚠️ External check failed: {str(e)}")
-            final_score = internal_score
-    else:
-        final_score = internal_score
-    
-    print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
-    
-    return {
-        "score": final_score,
-        "sources": sources,
-        "matches": matches,
-        "internal_score": internal_score,
-        "documents_checked": len(db_documents)
-    }
-
 # --- 3-AGENT CONSENSUS FOR AI DETECTION ---
 def check_ai_consensus(text):
     """Queries Gemini, GPT-4, and Claude. Returns Average Score with breakdown."""
@@ -854,6 +934,7 @@ def generate_essay_stream(instructions, word_count):
     - FLOOR MECHANISM: Once target is reached, word count CANNOT drop below target
     - HEARTBEAT: Sends ping every 10 seconds to prevent proxy timeouts
     - PROGRESS: Shows percentage completion (Round X/15 - Y%)
+    - AUTO-ARCHIVING: Saves final essay to TextSubmission table for plagiarism detection
     """
     # Setup heartbeat mechanism
     stop_heartbeat = threading.Event()
@@ -1290,6 +1371,14 @@ Revise the essay following the STRICT RULES of the current Mode above.
             )
             db.session.add(essay)
             db.session.commit()
+            
+            # AUTO-ARCHIVE: Save essay to TextSubmission table for plagiarism detection
+            archive_text_submission(
+                user_id=current_user.id,
+                content=best_draft,
+                source_type='essay',
+                title=instructions[:100]
+            )
             
             yield f"data: {json.dumps({'type': 'complete', 'essay_id': essay.id, 'score': final_avg})}\n\n"
         except Exception as e:
@@ -1794,18 +1883,26 @@ def generate_essay():
         }
     )
 
-# ENHANCED PLAGIARISM CHECK WITH COSINE SIMILARITY
+# ENHANCED PLAGIARISM CHECK WITH PERSISTENT DATABASE
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI Verification"""
+    """ENHANCED PLAGIARISM DETECTION: Database-First with Cosine Similarity + Auto-Archiving"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Cosine Similarity + AI...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Persistent Memory...")
     
-    # Use enhanced plagiarism detection with internal database check
+    # AUTO-ARCHIVE: Save this submission to the database BEFORE checking
+    archive_text_submission(
+        user_id=current_user.id,
+        content=text,
+        source_type='plagiarism_check',
+        title=text[:50] + "..."
+    )
+    
+    # Use enhanced plagiarism detection with persistent database
     findings = plagiarism_hunter_enhanced(text, current_user.id)
     
     # CRITICAL: Save the original input text
@@ -1820,7 +1917,7 @@ def check_plagiarism():
     for s in findings.get('sources', []):
         color = source_colors.get(s.get('id'), '#ccc')
         url = s.get('url', '#')
-        if not url.startswith('http') and not url.startswith('/'): 
+        if not url.startswith('http') and not url.startswith('/') and url != '#': 
             url = 'https://' + url
         
         sources_html += f'''
@@ -1885,19 +1982,27 @@ def check_plagiarism():
         print(f"❌ DB save error: {str(e)}")
         report_id = None
     
-    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Cosine Similarity")
+    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Persistent Database Memory")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# FIX #2: AI CHECK (Prevent Empty Box + PDF Export + ALWAYS SHOW TEXT)
+# AI CHECK WITH AUTO-ARCHIVING
 @app.route('/check-ai', methods=['POST'])
 @login_required
 def check_ai():
-    """RESCUE FIX: AI detection with guaranteed text visibility"""
+    """AI detection with guaranteed text visibility + Auto-Archiving"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🤖 RESCUE FIX: AI detection with guaranteed text visibility...")
+    print("🤖 AI DETECTION with Auto-Archiving...")
+    
+    # AUTO-ARCHIVE: Save this submission to the database
+    archive_text_submission(
+        user_id=current_user.id,
+        content=text,
+        source_type='ai_check',
+        title=text[:50] + "..."
+    )
     
     # 1. Get Data (Consensus) - now includes input_text
     try:
@@ -1961,7 +2066,7 @@ def check_ai():
         print(f"❌ DB save error: {str(e)}")
         report_id = None
     
-    print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
+    print("✅ AI DETECTION: Returning results with Auto-Archiving complete")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
 # PDF EXPORT WITH <br/> STRATEGY (PREVENTS TAG BREAKAGE)
@@ -2238,6 +2343,14 @@ def grade_assignment_route():
     if not brief or not essay:
         return jsonify({'error': 'Both brief and essay required'}), 400
     
+    # AUTO-ARCHIVE: Save the essay being graded
+    archive_text_submission(
+        user_id=current_user.id,
+        content=essay,
+        source_type='grader',
+        title=f"Graded Essay: {brief[:30]}..."
+    )
+    
     try:
         grading = grade_assignment(brief, essay)
         
@@ -2307,6 +2420,13 @@ with app.app_context():
     print("🔧 Creating database...")
     db.create_all()
     print("✅ Database ready!")
+    
+    # Check if TextSubmission table exists
+    try:
+        submission_count = TextSubmission.query.count()
+        print(f"✅ TextSubmission table ready with {submission_count} entries")
+    except Exception as e:
+        print(f"⚠️ TextSubmission table check: {str(e)}")
     
     if not User.query.filter_by(username='demo').first():
         demo = User(username='demo', email='demo@example.com')

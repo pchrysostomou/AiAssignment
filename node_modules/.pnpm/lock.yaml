@@ -1,0 +1,51 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      scikit-learn:
+        specifier: ^0.1.0
+        version: 0.1.0
+
+packages:
+
+  JSONStream@0.8.4:
+    resolution: {integrity: sha512-l0NN3IcqrZfZBJp7JWDJIHsnPV7yzJWqsYxQzL8Fwdx1BmEMjLuvtYkv+P9pbvpyfP75/f4MeDZhWNU4is32uA==}
+    hasBin: true
+
+  jsonparse@0.0.5:
+    resolution: {integrity: sha512-fw7Q/8gFR8iSekUi9I+HqWIap6mywuoe7hQIg3buTVjuZgALKj4HAmm0X6f+TaL4c9NJbvyFQdaI2ppr5p6dnQ==}
+    engines: {'0': node >= 0.2.0}
+
+  scikit-learn@0.1.0:
+    resolution: {integrity: sha512-+7TLxfLovxbRkaE7f2RGOx4/j6U1FrXf9AWFsaRyPImQAkhbR5Z1jdIUWdPDNT5pq3I/3yMuy9G2h+agKJHJGg==}
+    engines: {node: '>= 0.10.21'}
+
+  streaming-json-stringify@1.0.1:
+    resolution: {integrity: sha512-dSKMNM9sG2v3aCWDiuO5anWApYVIYz2BBIS+qWK6MqyEjhcRLU8sk0pV3W2sIGv3OCVLddqJPa/ksImEN9LSZw==}
+
+  through@2.3.8:
+    resolution: {integrity: sha512-w89qg7PI8wAdvX60bMDP+bFoD5Dvhm9oLheFp5O4a2QF0cSBGsBX4qZmadPMvVqlLJBBci+WqGGOAPvcDeNSVg==}
+
+snapshots:
+
+  JSONStream@0.8.4:
+    dependencies:
+      jsonparse: 0.0.5
+      through: 2.3.8
+
+  jsonparse@0.0.5: {}
+
+  scikit-learn@0.1.0:
+    dependencies:
+      JSONStream: 0.8.4
+      streaming-json-stringify: 1.0.1
+
+  streaming-json-stringify@1.0.1: {}
+
+  through@2.3.8: {}
