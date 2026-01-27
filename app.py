@@ -450,6 +450,36 @@ def search_web(query, max_results=5):
         print(f"❌ DuckDuckGo Search error: {str(e)}")
         return []
 
+def run_web_search(text, sources, matches, max_results=5):
+    """Run DuckDuckGo search and append results to sources/matches."""
+    try:
+        search_query = (text or "").strip()[:100]
+        if not search_query:
+            print("⚠️ Web search skipped: empty query")
+            return
+
+        web_results = search_web(search_query, max_results=max_results)
+
+        if web_results:
+            print(f"✅ DuckDuckGo found {len(web_results)} potential external sources")
+            for idx, result in enumerate(web_results, len(sources) + 1):
+                sources.append({
+                    'id': idx,
+                    'domain': result['title'][:50] + "..." if len(result['title']) > 50 else result['title'],
+                    'url': result['link'],
+                    'similarity': 50,
+                    'is_internal': False
+                })
+
+                matches.append({
+                    'text_segment': result['snippet'][:200] + "..." if len(result['snippet']) > 200 else result['snippet'],
+                    'source_id': idx
+                })
+        else:
+            print("⚠️ No web results found")
+    except Exception as e:
+        print(f"⚠️ Web search failed: {str(e)}")
+
 # --- COSINE SIMILARITY PLAGIARISM DETECTOR ---
 def calculate_similarity(input_text, db_documents):
     """
@@ -614,38 +644,13 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
             'source_id': idx
         })
     
-    # Step 5: MANDATORY WEB SEARCH (ALWAYS RUNS, NO CONDITION)
-    print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
-    
-    try:
-        # Extract key phrases for search query (first 100 chars)
-        search_query = text[:100].strip()
-        
-        # Perform DuckDuckGo search
-        web_results = search_web(search_query, max_results=5)
-        
-        if web_results:
-            print(f"✅ DuckDuckGo found {len(web_results)} potential external sources")
-            
-            # Add web results to sources
-            for idx, result in enumerate(web_results, len(sources) + 1):
-                sources.append({
-                    'id': idx,
-                    'domain': result['title'][:50] + "..." if len(result['title']) > 50 else result['title'],
-                    'url': result['link'],
-                    'similarity': 50  # Placeholder similarity for web results
-                })
-                
-                # Add snippet as match
-                matches.append({
-                    'text_segment': result['snippet'][:200] + "..." if len(result['snippet']) > 200 else result['snippet'],
-                    'source_id': idx
-                })
-        else:
-            print("⚠️ No web results found")
-            
-    except Exception as e:
-        print(f"⚠️ Web search failed: {str(e)}")
+    # Step 5: CONDITIONAL WEB SEARCH (MANDATORY if internal_score < 80 or no internal matches)
+    should_run_web = internal_score < 80 or not internal_matches
+    if should_run_web:
+        print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
+        run_web_search(text, sources, matches, max_results=5)
+    else:
+        print("✅ Skipping web search (internal score >= 80)")
     
     # Step 6: Calculate final score (internal only, web results are informational)
     final_score = internal_score
