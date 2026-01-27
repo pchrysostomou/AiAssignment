@@ -421,31 +421,43 @@ def parse_uploaded_file(file_path, filename):
     return extract_text_from_file(file_path, filename)
 
 # DuckDuckGo Search Integration (NO API KEY NEEDED)
-def search_web(query, max_results=5):
+def search_web(text, max_results=5, max_queries=3):
     """
     Perform web search using DuckDuckGo (no API key required).
+    Splits input text into sentence queries to avoid huge blobs.
     Returns list of search results with title, link, and snippet.
     """
     try:
-        print(f"🔍 DuckDuckGo Search Query: '{query[:100]}'")
-        
-        # Use DDGS for text search
+        sentences = re.split(r'(?<=[.!?])\s+', (text or "").strip())
+        queries = []
+        for s in sentences:
+            s = s.strip()
+            if 20 <= len(s) <= 200:
+                queries.append(s)
+        if not queries:
+            query = build_search_query(text)
+            queries = [query] if query else []
+
+        queries = queries[:max_queries]
+        if not queries:
+            print("⚠️ DuckDuckGo Search skipped: empty query list")
+            return []
+
         ddgs = DDGS()
         results = []
-        
-        # Perform search
-        search_results = ddgs.text(query, max_results=max_results)
-        
-        for item in search_results:
-            results.append({
-                'title': item.get('title', ''),
-                'link': item.get('href', ''),
-                'snippet': item.get('body', '')
-            })
-        
+
+        for q in queries:
+            print(f"🔍 DuckDuckGo Search Query: '{q[:100]}'")
+            search_results = ddgs.text(q, max_results=max_results)
+            for item in search_results:
+                results.append({
+                    'title': item.get('title', ''),
+                    'link': item.get('href', ''),
+                    'snippet': item.get('body', '')
+                })
+
         print(f"✅ DuckDuckGo Search completed: {len(results)} results")
         return results
-        
     except Exception as e:
         print(f"❌ DuckDuckGo Search error: {str(e)}")
         return []
@@ -482,12 +494,7 @@ def build_search_query(text, max_len=180):
 def run_web_search(text, sources, matches, max_results=5):
     """Run DuckDuckGo search and append results to sources/matches."""
     try:
-        search_query = build_search_query(text)
-        if not search_query:
-            print("⚠️ Web search skipped: empty query")
-            return
-
-        web_results = search_web(search_query, max_results=max_results)
+        web_results = search_web(text, max_results=max_results)
 
         if web_results:
             print(f"✅ DuckDuckGo found {len(web_results)} potential external sources")
@@ -673,8 +680,8 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
             'source_id': idx
         })
     
-    # Step 5: CONDITIONAL WEB SEARCH (MANDATORY if internal_score < 80 or no internal matches)
-    should_run_web = internal_score < 80 or not internal_matches
+    # Step 5: CONDITIONAL WEB SEARCH (MANDATORY unless internal_score is 100%)
+    should_run_web = internal_score < 100
     if should_run_web:
         print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
         run_web_search(text, sources, matches, max_results=5)
