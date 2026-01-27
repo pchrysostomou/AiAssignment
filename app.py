@@ -522,32 +522,43 @@ def calculate_similarity(input_text, db_documents):
         print(f"❌ Cosine Similarity Error: {str(e)}")
         return []
 
-# --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST APPROACH ---
-def plagiarism_hunter_enhanced(text, user_id):
+# --- ENHANCED PLAGIARISM HUNTER: DATABASE-FIRST APPROACH WITH SELF-MATCH EXCLUSION ---
+def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     """
-    ENHANCED PLAGIARISM DETECTION WITH PERSISTENT DATABASE:
-    Step 1: Fetch ALL historical submissions from TextSubmission table
+    ENHANCED PLAGIARISM DETECTION WITH PERSISTENT DATABASE + SELF-MATCH EXCLUSION:
+    Step 1: Fetch ALL historical submissions EXCEPT the current one
     Step 2: Run Cosine Similarity comparison
-    Step 3: Optionally check external sources if internal score is low
+    Step 3: Check external sources if internal score is low (< 20%)
     
-    This prevents False Negatives by checking the persistent database first.
+    Args:
+        text: The text to check for plagiarism
+        user_id: ID of the current user
+        current_submission_id: ID of the current submission to exclude from comparison
+    
+    This prevents False Positives (100% self-match) and enables proper web fallback.
     """
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Cosine Similarity...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion...")
     
-    # Step 1: Build database of ALL previous submissions (not just current user)
+    # Step 1: Build database of ALL previous submissions EXCLUDING current one
     db_documents = {}
     
     try:
-        # Fetch ALL text submissions from the database (system-wide history)
-        # This creates a comprehensive plagiarism detection system
-        all_submissions = TextSubmission.query.order_by(TextSubmission.created_at.desc()).limit(1000).all()
+        # Fetch ALL text submissions EXCEPT the current one
+        query = TextSubmission.query.order_by(TextSubmission.created_at.desc()).limit(1000)
+        
+        # CRITICAL FIX: Exclude current submission ID
+        if current_submission_id:
+            query = query.filter(TextSubmission.id != current_submission_id)
+            print(f"🚫 Excluding current submission ID: {current_submission_id}")
+        
+        all_submissions = query.all()
         
         for submission in all_submissions:
             # Use submission ID as key
             doc_key = f"submission_{submission.id}"
             db_documents[doc_key] = submission.content
         
-        print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison")
+        print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison (excluding current)")
         
     except Exception as e:
         print(f"⚠️ Database fetch error: {str(e)}")
@@ -612,9 +623,9 @@ def plagiarism_hunter_enhanced(text, user_id):
             'source_id': idx
         })
     
-    # Step 5: If internal score is low, optionally check external sources with AI
+    # Step 5: FORCE WEB CHECK if internal score < 20% (enables external plagiarism detection)
     if internal_score < 20:
-        print("🌐 Internal score low, checking external sources with AI...")
+        print("🌐 Internal score < 20%, triggering external web check...")
         
         # Use Gemini for web search
         search_prompt = f"""Search the web for this text. Return a list of SPECIFIC URLs that match. 
@@ -622,8 +633,6 @@ TEXT: {text[:1000]}...
 JSON OUTPUT: {{"potential_urls": ["url1", "url2"]}}"""
         
         try:
-            from app import call_gemini, clean_and_parse_json, call_gpt4
-            
             search_data = clean_and_parse_json(call_gemini(search_prompt))
             urls = search_data.get('potential_urls', [])
             print(f"✅ Gemini found {len(urls)} potential external URLs")
@@ -1883,27 +1892,30 @@ def generate_essay():
         }
     )
 
-# ENHANCED PLAGIARISM CHECK WITH PERSISTENT DATABASE
+# ENHANCED PLAGIARISM CHECK WITH PERSISTENT DATABASE + SELF-MATCH EXCLUSION
 @app.route('/check-plagiarism', methods=['POST'])
 @login_required
 def check_plagiarism():
-    """ENHANCED PLAGIARISM DETECTION: Database-First with Cosine Similarity + Auto-Archiving"""
+    """ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion + Auto-Archiving"""
     text = request.form.get('text')
     if not text:
         return jsonify({'error': 'No text'}), 400
     
-    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Persistent Memory...")
+    print("🔍 ENHANCED PLAGIARISM DETECTION: Database-First with Self-Match Exclusion...")
     
-    # AUTO-ARCHIVE: Save this submission to the database BEFORE checking
-    archive_text_submission(
+    # AUTO-ARCHIVE: Save this submission to the database FIRST
+    current_submission = archive_text_submission(
         user_id=current_user.id,
         content=text,
         source_type='plagiarism_check',
         title=text[:50] + "..."
     )
     
-    # Use enhanced plagiarism detection with persistent database
-    findings = plagiarism_hunter_enhanced(text, current_user.id)
+    # Get the ID of the current submission to exclude from comparison
+    current_submission_id = current_submission.id if current_submission else None
+    
+    # Use enhanced plagiarism detection with persistent database + self-match exclusion
+    findings = plagiarism_hunter_enhanced(text, current_user.id, current_submission_id)
     
     # CRITICAL: Save the original input text
     findings['input_text'] = text
@@ -1982,7 +1994,7 @@ def check_plagiarism():
         print(f"❌ DB save error: {str(e)}")
         report_id = None
     
-    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Persistent Database Memory")
+    print("✅ ENHANCED PLAGIARISM DETECTION: Returning results with Self-Match Exclusion + Web Fallback")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
 # AI CHECK WITH AUTO-ARCHIVING
