@@ -1801,16 +1801,13 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# EXPLICIT STEP-BY-STEP PDF EXPORT - FIXES VISIBLE TAGS ISSUE
+# FINAL STABLE PDF RENDERER - NO SPLIT STRATEGY (FIXES MULTI-LINE HIGHLIGHTS)
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    EXPLICIT ORDER OF OPERATIONS WITH CLEAR VARIABLE NAMES:
-    Step 1: Insert markers into RAW text (Do not escape yet)
-    Step 2: Escape the text (Make it Safe)
-    Step 3: Swap Markers for REAL Tags (Inject Markup)
-    Step 4: Render to PDF
+    FINAL FIX: Handle multi-line highlights by NOT splitting text.
+    Use <br/> tags for line breaks to preserve XML structure.
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1903,22 +1900,22 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
     
-    # --- FINAL CORRECTED PDF RENDERER (Explicit Steps) ---
+    # --- FINAL STABLE PDF RENDERER (No Split Strategy) ---
     story.append(Paragraph("<b>Detailed Text Analysis:</b>", styles['Heading3']))
     story.append(Spacer(1, 12))
 
     full_text = data.get('input_text', '') or ''
     segments = data.get('segments', []) or []
 
+    # Fallback reconstruction
     if not full_text and segments:
         full_text = " ".join([s.get('text', '') for s in segments])
 
     if not full_text.strip():
         story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
     else:
-        # STEP 1: Insert Markers into RAW text (Do not escape yet)
-        # Markers must be unique strings that don't contain <, >, or &
-        step1_text_with_markers = full_text
+        # STEP 1: Insert Markers into RAW text
+        step1_text = full_text
         MARKER_START = "@@RED_START@@"
         MARKER_END = "@@RED_END@@"
 
@@ -1933,31 +1930,32 @@ def export_pdf_dynamic(report_id):
                 pattern_str = re.escape(text_part).replace(r'\ ', r'[\s\n\r]+')
                 try:
                     pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
-                    step1_text_with_markers = pattern.sub(
+                    step1_text = pattern.sub(
                         lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
-                        step1_text_with_markers
+                        step1_text
                     )
                 except:
                     continue
 
-        # STEP 2: Escape the text (Make it Safe)
-        # This turns "&" -> "&amp;" and "<" -> "&lt;"
-        # Crucially, our markers "@@RED_START@@" are safe and won't change.
-        step2_safe_text = escape(step1_text_with_markers)
+        # STEP 2: Escape the text FIRST (Sanitize content)
+        step2_safe_text = escape(step1_text)
 
-        # STEP 3: Swap Markers for REAL Tags (Inject Markup)
-        # NOW we insert the <font> tags. Since escaping is already done, these will stay as markup.
-        step3_final_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+        # STEP 3: Restore Tags & Convert Newlines
+        # A. Restore Highlights
+        step3_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+        
+        # B. Handle Newlines (CRITICAL FIX)
+        # Instead of splitting, replace \n with <br/> so the XML structure remains intact across lines
+        step3_xml = step3_xml.replace('\n', '<br/><br/>') 
 
-        # STEP 4: Render
-        for paragraph in step3_final_xml.split('\n'):
-            if paragraph.strip():
-                try:
-                    # ReportLab will now see the <font> tag and render the color
-                    story.append(Paragraph(paragraph, styles['Normal']))
-                except:
-                    story.append(Paragraph(escape(paragraph), styles['Normal']))
-                story.append(Spacer(1, 8))
+        # STEP 4: Render as ONE single paragraph block
+        # ReportLab handles page breaks automatically for long paragraphs
+        try:
+            story.append(Paragraph(step3_xml, styles['Normal']))
+        except Exception as e:
+            # Last resort fallback if XML is still somehow broken
+            story.append(Paragraph(f"<i>Render Error: {str(e)}</i>", styles['Normal']))
+            story.append(Paragraph(escape(full_text), styles['Normal']))
 
     # Build PDF
     try:
