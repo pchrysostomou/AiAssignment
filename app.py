@@ -846,7 +846,11 @@ def check_ai_consensus(text):
     
     try:
         gpt_response = call_gpt4(gpt_prompt)
+        if not gpt_response or not str(gpt_response).strip():
+            raise ValueError("Empty GPT response")
         gpt_data = clean_and_parse_json(gpt_response)
+        if not isinstance(gpt_data, dict):
+            raise ValueError("Invalid GPT JSON payload")
         gpt_score = gpt_data.get('ai_score', 0)
         print(f"✅ GPT-4 Score: {gpt_score}%")
     except Exception as e:
@@ -1891,7 +1895,12 @@ def check_plagiarism():
     # Use enhanced plagiarism detection with persistent database + self-match exclusion + mandatory web search
     findings = plagiarism_hunter_enhanced(text, current_user.id, current_submission_id)
 
-    match_scores = [match.get('score', 0) for match in findings.get('matches', [])]
+    sources_by_id = {source.get('id'): source for source in findings.get('sources', [])}
+    match_scores = [
+        match.get('score', 0)
+        for match in findings.get('matches', [])
+        if not sources_by_id.get(match.get('source_id'), {}).get('is_internal', False)
+    ]
     overall_risk = max(match_scores, default=0)
     findings['overall_risk'] = overall_risk
     findings['score'] = overall_risk
@@ -2206,7 +2215,7 @@ def create_pdf_report(report):
 
             ai_segments = [
                 seg for seg in segments
-                if seg.get('is_ai') and seg.get('confidence', 0) >= 70
+                if seg.get('is_ai') and seg.get('confidence', 0) > 75
             ]
             ai_segments.sort(key=lambda x: len(x.get('text', '') or ''), reverse=True)
             for seg in ai_segments:
