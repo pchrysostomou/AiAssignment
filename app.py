@@ -2209,7 +2209,7 @@ def create_pdf_report(report):
                     )
                 except Exception:
                     continue
-        else:
+       else:
             marker_start = "@@RED_START@@"
             marker_end = "@@RED_END@@"
 
@@ -2235,19 +2235,24 @@ def create_pdf_report(report):
 
         step2_safe_text = escape(step1_text)
 
-        step3_xml = step2_safe_text.replace(
-            marker_start,
-            f'<font color="{red_color.hexval()}">'
-        ).replace(marker_end, '</font>')
+        if report.tool_type == 'plagiarism':
+            step3_xml = step2_safe_text.replace(
+                marker_start,
+                f'<font color="{red_color.hexval()}">'
+            ).replace(marker_end, '</font>')
+        else:
+            step3_xml = step2_safe_text.replace(
+                marker_start, 
+                '<font color="#FF0000">'
+            ).replace(marker_end, '</font>')
 
-        step3_xml = step3_xml.replace('\n', '<br/>')
+      step3_xml = step3_xml.replace('\n', '<br/>')
 
         try:
             story.append(Paragraph(step3_xml, normal_style))
         except Exception as e:
             story.append(Paragraph(f"<i>Render Error: {str(e)}</i>", styles['Normal']))
             story.append(Paragraph(escape(full_text), normal_style))
-
     try:
         doc.build(story)
         buffer.seek(0)
