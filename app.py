@@ -1801,13 +1801,13 @@ def check_ai():
     print("✅ RESCUE FIX: Returning AI detection with guaranteed text visibility")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# FINAL STABLE PDF RENDERER - NO SPLIT STRATEGY (FIXES MULTI-LINE HIGHLIGHTS)
+# PDF EXPORT WITH <br/> STRATEGY (PREVENTS TAG BREAKAGE)
 @app.route('/export-pdf/<int:report_id>')
 @login_required
 def export_pdf_dynamic(report_id):
     """
-    FINAL FIX: Handle multi-line highlights by NOT splitting text.
-    Use <br/> tags for line breaks to preserve XML structure.
+    <br/> STRATEGY FIX: Treat entire text as ONE paragraph with <br/> for line breaks.
+    This prevents <font> tags from breaking across split boundaries.
     """
     report = Report.query.get_or_404(report_id)
     
@@ -1900,14 +1900,13 @@ def export_pdf_dynamic(report_id):
             
             story.append(Spacer(1, 20))
     
-    # --- FINAL STABLE PDF RENDERER (No Split Strategy) ---
+    # --- FINAL STABLE PDF RENDERER (<br/> Strategy) ---
     story.append(Paragraph("<b>Detailed Text Analysis:</b>", styles['Heading3']))
     story.append(Spacer(1, 12))
 
     full_text = data.get('input_text', '') or ''
     segments = data.get('segments', []) or []
 
-    # Fallback reconstruction
     if not full_text and segments:
         full_text = " ".join([s.get('text', '') for s in segments])
 
@@ -1924,6 +1923,8 @@ def export_pdf_dynamic(report_id):
             for seg in segments:
                 text_part = (seg.get('text', '') or '').strip()
                 if not text_part: continue
+                
+                # Highlight everything detected
                 if len(text_part) < 5: continue 
 
                 # Robust Regex matching
@@ -1940,20 +1941,20 @@ def export_pdf_dynamic(report_id):
         # STEP 2: Escape the text FIRST (Sanitize content)
         step2_safe_text = escape(step1_text)
 
-        # STEP 3: Restore Tags & Convert Newlines
-        # A. Restore Highlights
+        # STEP 3: Swap Markers & Handle Newlines
+        # A. Restore Highlights (Markers -> Tags)
         step3_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
         
         # B. Handle Newlines (CRITICAL FIX)
-        # Instead of splitting, replace \n with <br/> so the XML structure remains intact across lines
-        step3_xml = step3_xml.replace('\n', '<br/><br/>') 
+        # Replace \n with <br/> so the XML structure remains valid in one big block
+        step3_xml = step3_xml.replace('\n', '<br/>') 
 
-        # STEP 4: Render as ONE single paragraph block
-        # ReportLab handles page breaks automatically for long paragraphs
+        # STEP 4: Render as ONE single paragraph
+        # ReportLab handles wrapping automatically
         try:
             story.append(Paragraph(step3_xml, styles['Normal']))
         except Exception as e:
-            # Last resort fallback if XML is still somehow broken
+            # Last resort fallback
             story.append(Paragraph(f"<i>Render Error: {str(e)}</i>", styles['Normal']))
             story.append(Paragraph(escape(full_text), styles['Normal']))
 
