@@ -443,19 +443,18 @@ def search_web(text, max_results=5, max_queries=3):
             print("⚠️ DuckDuckGo Search skipped: empty query list")
             return []
 
-        ddgs = DDGS()
         results = []
-
-        for q in queries:
-            print(f"🔍 DuckDuckGo Search Query: '{q[:100]}'")
-            search_results = ddgs.text(q, max_results=max_results)
-            for item in search_results:
-                results.append({
-                    'title': item.get('title', ''),
-                    'link': item.get('href', ''),
-                    'snippet': item.get('body', ''),
-                    'similarity_score': 50
-                })
+        with DDGS() as ddgs:
+            for q in queries:
+                print(f"🔍 DuckDuckGo Search Query: '{q[:100]}'")
+                search_results = ddgs.text(q, max_results=max_results)
+                for item in search_results:
+                    results.append({
+                        'title': item.get('title', ''),
+                        'link': item.get('href', ''),
+                        'snippet': item.get('body', ''),
+                        'similarity_score': 50
+                    })
 
         print(f"✅ DuckDuckGo Search completed: {len(results)} results")
         return results
@@ -582,15 +581,15 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
     """
     ENHANCED PLAGIARISM DETECTION:
     - Internal DB similarity via TF-IDF
-    - External web search via DuckDuckGo unless internal score is 100%
+    - External web search via DuckDuckGo unless internal score is identical (>= 99%)
     """
     print("🔍 ENHANCED PLAGIARISM DETECTION: Database + Web Search...")
 
-    # Step 1: Build database of previous plagiarism submissions excluding current
+    # Step 1: Build database of previous submissions excluding AI checks and current submission
     db_documents = {}
     try:
         query = TextSubmission.query.filter(
-            TextSubmission.source_type == 'plagiarism_check'
+            TextSubmission.source_type != 'ai_check'
         ).order_by(TextSubmission.created_at.desc())
 
         if current_submission_id:
@@ -602,7 +601,7 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
             doc_key = f"submission_{submission.id}"
             db_documents[doc_key] = submission.content
 
-        print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison (excluding current)")
+        print(f"📚 Database: Loaded {len(db_documents)} submissions for comparison (excluding AI checks/current)")
     except Exception as e:
         print(f"⚠️ Database fetch error: {str(e)}")
         db_documents = {}
@@ -634,8 +633,8 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
             'source_id': idx
         })
 
-    # Step 4: Mandatory web search unless internal_score is 100%
-    if internal_score < 100:
+    # Step 4: Mandatory web search unless internal_score is identical (>= 99%)
+    if internal_score < 99:
         print("🌐 MANDATORY: Running external web search using DuckDuckGo...")
         web_results = search_web(text, max_results=5)
         if web_results:
@@ -654,7 +653,7 @@ def plagiarism_hunter_enhanced(text, user_id, current_submission_id=None):
         else:
             print("⚠️ No web results found")
     else:
-        print("✅ Skipping web search (internal score == 100%)")
+        print("✅ Skipping web search (internal score >= 99%)")
 
     final_score = internal_score
     print(f"🎯 FINAL PLAGIARISM SCORE: {final_score}%")
@@ -1902,15 +1901,15 @@ def check_plagiarism():
     for s in findings.get('sources', []):
         color = source_colors.get(s.get('id'), '#ccc')
         url = s.get('url')
-        is_internal = s.get('is_internal', False) or not url or url == '#'
-        if not is_internal and not url.startswith('http') and not url.startswith('/'):
+        is_internal = s.get('is_internal', False)
+        if not is_internal and url and not url.startswith('http') and not url.startswith('/'):
             url = 'https://' + url
         
         domain = s.get('domain')
         link_or_text = (
             f'<span style="color:{color}; font-weight:bold;">{domain}</span>'
             if is_internal
-            else f'<a href="{url}" target="_blank" style="color:{color}; font-weight:bold; text-decoration:none;">{domain} 🔗</a>'
+            else f'<a href="{url or "#"}" target="_blank" style="color:{color}; font-weight:bold; text-decoration:none;">{domain} 🔗</a>'
         )
 
         sources_html += f'''
@@ -2062,28 +2061,16 @@ def check_ai():
     print("✅ AI DETECTION: Returning results with Auto-Archiving complete")
     return jsonify({'success': True, 'html': html, 'report_id': report_id})
 
-# PDF EXPORT WITH <br/> STRATEGY (PREVENTS TAG BREAKAGE)
-@app.route('/export-pdf/<int:report_id>')
-@login_required
-def export_pdf_dynamic(report_id):
+def create_pdf_report(report):
     """
-    <br/> STRATEGY FIX: Treat entire text as ONE paragraph with <br/> for line breaks.
-    This prevents <font> tags from breaking across split boundaries.
+    Build a PDF report with strict color enforcement for plagiarism highlights.
+    Plagiarized segments are red (Color(1, 0, 0)), unique text is black.
     """
-    report = Report.query.get_or_404(report_id)
-    
-    # Security check
-    if report.user_id != current_user.id:
-        flash('Unauthorized', 'error')
-        return redirect(url_for('dashboard'))
-
-    # Setup Buffer and Document
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
     styles = getSampleStyleSheet()
     story = []
 
-    # --- CUSTOM STYLES ---
     title_style = ParagraphStyle(
         'ReportTitle',
         parent=styles['Heading1'],
@@ -2092,33 +2079,35 @@ def export_pdf_dynamic(report_id):
         spaceAfter=20,
         alignment=1
     )
+    normal_style = ParagraphStyle(
+        'ReportBody',
+        parent=styles['Normal'],
+        textColor=colors.black
+    )
 
-    # --- HEADER & SCORECARD ---
     report_type = "AI Detection" if report.tool_type == 'ai_check' else "Plagiarism Detection"
     story.append(Paragraph(f"{report_type.upper()} REPORT", title_style))
     story.append(Spacer(1, 10))
-    
-    # Parse data
+
     try:
         data = json.loads(report.result_data) if isinstance(report.result_data, str) else report.result_data
-    except:
+    except Exception:
         data = {}
-    
-    # Prepare Score Data
+
     if report.tool_type == 'ai_check':
         probability = data.get('ai_score', 0)
         score_label = "AI PROBABILITY"
     else:
         probability = data.get('score', 0)
         score_label = "PLAGIARISM RISK"
-    
+
     score_color = colors.red if probability > 50 else (colors.orange if probability > 20 else colors.green)
-    
+
     score_data = [
         [score_label, f"{probability}%"],
         ["Date", report.created_at.strftime('%Y-%m-%d %H:%M')]
     ]
-    
+
     if report.tool_type == 'ai_check':
         breakdown = data.get('breakdown', 'N/A')
         if breakdown and breakdown != 'N/A':
@@ -2130,7 +2119,7 @@ def export_pdf_dynamic(report_id):
     elif report.tool_type == 'plagiarism':
         docs_checked = data.get('documents_checked', 0)
         score_data.append(["Documents Checked", str(docs_checked)])
-    
+
     t = Table(score_data, colWidths=[200, 100])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (1, 0), score_color),
@@ -2142,17 +2131,16 @@ def export_pdf_dynamic(report_id):
         ('GRID', (0, 0), (-1, -1), 1, colors.lightgrey),
         ('ALIGN', (1, 0), (1, -1), 'CENTER'),
     ]))
-    
+
     story.append(t)
     story.append(Spacer(1, 25))
-    
-    # Add sources section for plagiarism reports
+
     if report.tool_type == 'plagiarism':
         sources = data.get('sources', [])
         if sources:
             story.append(Paragraph("<b>Detected Sources:</b>", styles['Heading3']))
             story.append(Spacer(1, 10))
-            
+
             for s in sources:
                 domain = s.get('domain', 'Unknown')
                 url = s.get('url')
@@ -2164,10 +2152,9 @@ def export_pdf_dynamic(report_id):
                     source_text = f"• <b>{domain}</b> ({similarity}% match)"
                 story.append(Paragraph(source_text, styles['Normal']))
                 story.append(Spacer(1, 8))
-            
+
             story.append(Spacer(1, 20))
-    
-    # --- FINAL STABLE PDF RENDERER (<br/> Strategy) ---
+
     story.append(Paragraph("<b>Detailed Text Analysis:</b>", styles['Heading3']))
     story.append(Spacer(1, 12))
 
@@ -2180,12 +2167,12 @@ def export_pdf_dynamic(report_id):
     if not full_text.strip():
         story.append(Paragraph("<i>Error: No text content available.</i>", styles['Normal']))
     else:
-        # STEP 1: Insert Markers into RAW text
         step1_text = full_text
+        red_color = colors.Color(1, 0, 0)
 
         if report.tool_type == 'plagiarism':
-            MARKER_START = "@@RED_TEXT_START@@"
-            MARKER_END = "@@RED_TEXT_END@@"
+            marker_start = "@@RED_TEXT_START@@"
+            marker_end = "@@RED_TEXT_END@@"
             match_segments = data.get('matches', []) or []
 
             match_segments.sort(key=lambda x: len((x.get('text_segment', '') or '')), reverse=True)
@@ -2198,16 +2185,16 @@ def export_pdf_dynamic(report_id):
                 try:
                     pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
                     step1_text = pattern.sub(
-                        lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
+                        lambda m: f"{marker_start}{m.group(0)}{marker_end}",
                         step1_text
                     )
-                except:
+                except Exception:
                     continue
         else:
-            MARKER_START = "@@RED_START@@"
-            MARKER_END = "@@RED_END@@"
+            marker_start = "@@RED_START@@"
+            marker_end = "@@RED_END@@"
 
-            segments.sort(key=lambda x: len(x.get('text','') or ''), reverse=True)
+            segments.sort(key=lambda x: len(x.get('text', '') or ''), reverse=True)
             for seg in segments:
                 text_part = (seg.get('text', '') or '').strip()
                 if not text_part or len(text_part) < 5:
@@ -2217,41 +2204,57 @@ def export_pdf_dynamic(report_id):
                 try:
                     pattern = re.compile(pattern_str, re.IGNORECASE | re.DOTALL)
                     step1_text = pattern.sub(
-                        lambda m: f"{MARKER_START}{m.group(0)}{MARKER_END}",
+                        lambda m: f"{marker_start}{m.group(0)}{marker_end}",
                         step1_text
                     )
-                except:
+                except Exception:
                     continue
 
-        # STEP 2: Escape the text FIRST (Sanitize content)
         step2_safe_text = escape(step1_text)
 
-        # STEP 3: Swap Markers & Handle Newlines
         if report.tool_type == 'plagiarism':
-            step3_xml = step2_safe_text.replace(MARKER_START, '<font color="red">').replace(MARKER_END, '</font>')
+            step3_xml = step2_safe_text.replace(
+                marker_start,
+                f'<font color="{red_color.hexval()}">'
+            ).replace(marker_end, '</font>')
         else:
-            step3_xml = step2_safe_text.replace(MARKER_START, '<font backColor="#FFCCCC">').replace(MARKER_END, '</font>')
+            step3_xml = step2_safe_text.replace(marker_start, '<font backColor="#FFCCCC">').replace(marker_end, '</font>')
 
-        # Replace \n with <br/> so the XML structure remains valid in one big block
         step3_xml = step3_xml.replace('\n', '<br/>')
 
-        # STEP 4: Render as ONE single paragraph
         try:
-            story.append(Paragraph(step3_xml, styles['Normal']))
+            story.append(Paragraph(step3_xml, normal_style))
         except Exception as e:
-            # Last resort fallback
             story.append(Paragraph(f"<i>Render Error: {str(e)}</i>", styles['Normal']))
-            story.append(Paragraph(escape(full_text), styles['Normal']))
+            story.append(Paragraph(escape(full_text), normal_style))
 
-    # Build PDF
     try:
         doc.build(story)
         buffer.seek(0)
-        
-        return Response(buffer, mimetype='application/pdf', 
-                       headers={'Content-Disposition': f'attachment;filename=report_{report.tool_type}_{report_id}.pdf'})
+        return buffer
     except Exception as e:
         logging.exception("PDF Build Error")
+        raise e
+
+# PDF EXPORT WITH <br/> STRATEGY (PREVENTS TAG BREAKAGE)
+@app.route('/export-pdf/<int:report_id>')
+@login_required
+def export_pdf_dynamic(report_id):
+    """
+    <br/> STRATEGY FIX: Treat entire text as ONE paragraph with <br/> for line breaks.
+    This prevents <font> tags from breaking across split boundaries.
+    """
+    report = Report.query.get_or_404(report_id)
+    
+    if report.user_id != current_user.id:
+        flash('Unauthorized', 'error')
+        return redirect(url_for('dashboard'))
+
+    try:
+        buffer = create_pdf_report(report)
+        return Response(buffer, mimetype='application/pdf',
+                        headers={'Content-Disposition': f'attachment;filename=report_{report.tool_type}_{report_id}.pdf'})
+    except Exception as e:
         flash(f'Error generating PDF: {str(e)}', 'error')
         return redirect(url_for('dashboard'))
 
@@ -2313,8 +2316,8 @@ def view_report(report_id):
         for s in data.get('sources', []):
             color = source_colors.get(s.get('id'), '#ccc')
             url = s.get('url')
-            is_internal = s.get('is_internal', False) or not url or url == '#'
-            if not is_internal and not url.startswith('http') and not url.startswith('/'):
+            is_internal = s.get('is_internal', False)
+            if not is_internal and url and not url.startswith('http') and not url.startswith('/'):
                 url = 'https://' + url
             domain = s.get('domain', 'Unknown')
             similarity = s.get('similarity', 0)
@@ -2322,7 +2325,7 @@ def view_report(report_id):
             link_or_text = (
                 f'<span style="color: {color}; font-weight:bold; font-size:1.1em; word-break: break-all;">{domain}</span>'
                 if is_internal
-                else f'<a href="{url}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.1em; word-break: break-all;">{domain} 🔗</a>'
+                else f'<a href="{url or "#"}" target="_blank" style="color: {color}; font-weight:bold; text-decoration:none; font-size:1.1em; word-break: break-all;">{domain} 🔗</a>'
             )
 
             sources_html += f'''
